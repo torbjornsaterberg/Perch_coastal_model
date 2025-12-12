@@ -1,0 +1,863 @@
+---
+title: "Summary Perch coastal data"
+author: "Torbjörn Säterberg"
+date: today  
+format: html
+embed-resources: true
+editor: visual
+code-fold: true
+error: FALSE
+warning: FALSE
+message: FALSE
+toc: true
+toc-depth: 3
+lang: sv  
+---
+
+# 1.Introduction {#introduction}
+
+This script is used to import perch data from the KUL-data base in order to prepare for fitting stock assessment models. The models considered is one age based model [(Cook 2013 Fish Res)](https://www.sciencedirect.com/science/article/pii/S0165783613000064). In this analysis we only consider females as we only have individual data from females. Hence, in the modeling part of this project we only investigate the female part of the stocks. In order to run assessment models the data is here scrutinized and formatted. This is done through a couple of dataanalyses and plotting. All figures produced can be found in the [last chapter of this document](#visdata).
+
+## 1.1 Required R-packages {#R-packages}
+
+```{r}
+#| label: load-packages
+require("RPostgres", quietly = TRUE) # postgres functionality in R
+library(DBI) # For database connection
+library(odbc) # Connection between R and relation database management systems
+library("sp", quietly = TRUE) # spatial data in R
+library("sf", quietly = TRUE) # spatial functionality in R
+library(ggforce, quietly=TRUE)  # added functionality to ggplot
+library(tmap) # creating beautiful maps 
+library(rnaturalearth) # map data
+library(tidybayes) # working with posterior draws for bayesian models
+library(flextable) # plotting nice tables
+library(brms) # multilevel models in a bayesian context(similar to lmer)
+library(bayesplot) # plotting bayesian models
+library(future) # parallell computing 
+library(purrr) # working with functions in pipe
+library(modelr) # modeling functions with pipe
+library(fishmethods) # Fishery methods age-length keys etc.
+library(tidyverse) # tidyverse functionality for working with data
+library(viridis)
+```
+
+## 1.2 Connect to KUL-database {#dbconnection}
+
+```{r}
+# Connect to Aqua-datalagret
+AQ_con <- dbConnect(odbc(), 
+                         Driver = "SQL Server", 
+                         Server = "aquadw_prod.db.slu.se",
+                         USER = Sys.info()["user"], 
+                         Database = "AquaDW_prod", 
+                         Trusted_Connection = "TRUE", 
+                         encoding = "UTF-8")
+```
+
+# 2 Load data {#loaddata}
+
+Here we load data using a direct read-only database connection to SLU datalagret. We are only interested in K064 data series(Nordiska kustöversiktsnät). We only load data from the following test fishing areas:
+
+-   Torhamn
+-   Holmön
+-   Forsmark
+-   Långvindsfjärden
+-   Norrbyn
+-   Kinnbäcksfjärden
+-   Gaviksfjärden
+-   Lagnö
+-   Råneå
+-   Asköfjärden
+-   Kvädöfjärden
+
+## 2.1 Check which K064 data series exist {#K064-series}
+
+Here we investigate which series with nordiska kustöversiktsnät(K064) are available. Number of years with data is checked
+
+```{sql , connection="AQ_con", output.var = "K064-series"}
+
+-- Observation years
+SELECT Lokal, COUNT(År) nb_years_with_data, STRING_AGG(CONVERT(VARCHAR,År),';') years
+FROM 
+(SELECT DISTINCT Lokal, År -- select unique observations of lokal and år
+FROM AquaDW_prod.mart.KUL_OBSERVATION_NEW
+WHERE Redskap_kod = 'K064'
+GROUP BY Lokal, År) A
+GROUP BY Lokal
+
+```
+
+```{r}
+flextable(`K064-series`)
+```
+
+## 2.2 Load effort data {#effordata}
+
+Here we load and summarize effort data from the KUL table "KUL_OBSERVATION_NEW". For perch we are only interested in gill-net nights that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m depth.
+
+```{sql, connection="AQ_con", output.var = "effort"}
+-- CALCULATE EFFORT
+SELECT Lokal, Fångstområde, År, FISKE_ID, COUNT(*) effort
+FROM AquaDW_prod.mart.KUL_OBSERVATION_NEW
+WHERE 
+Redskap_kod = 'K064' 
+AND 
+Störning='NEJ'
+AND 
+Godkänd ='JA'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND 
+STRATIFIERING NOT IN ('Djupstratum(0-10-20-30): 10-20 m', -- remove data from deepest strata
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m')
+GROUP BY Lokal, Fångstområde, År, FISKE_ID; 
+```
+
+## 2.3 Load Catch data {#catchdata}
+
+Here we load catch data for length groups.F or perch we are only interested in gill-nets that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m.
+
+```{sql, connection="AQ_con", output.var = "Kul_data"}
+SELECT *
+FROM AquaDW_prod.mart.KUL_LANGDGRUPP klmt --
+WHERE 
+Redskap_kod = 'K064' 
+AND
+Art = 'Abborre' 
+AND
+Godkänd='JA'
+AND 
+Störning='NEJ'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND
+Stratifiering NOT IN ('Djupstratum(0-10-20-30): 10-20 m',
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m')
+```
+
+## 2.4 Load individual data {#inddata}
+
+Here we load individual data. Length and age of individual fish.
+
+```{sql, connection="AQ_con", output.var = "Kul_ind"}
+SELECT * 
+FROM
+AquaDW_prod.mart.KUL_INDIVID_NEW
+WHERE
+Art = 'Abborre'
+AND 
+FISKE_ID IN
+(SELECT DISTINCT FISKE_ID
+FROM AquaDW_prod.mart.KUL_LANGDGRUPP klmt --
+WHERE 
+Redskap_kod = 'K064' 
+AND
+Art = 'Abborre' 
+AND
+Godkänd='JA'
+AND 
+Störning='NEJ'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND
+Stratifiering NOT IN ('Djupstratum(0-10-20-30): 10-20 m',
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m'))
+OR -- In Kvädöfjärden individuals are sampled using nätlänkar some years and nordiska nät other years.
+FISKE_ID IN 
+(SELECT DISTINCT FISKE_ID
+FROM
+AquaDW_prod.mart.KUL_INDIVIDPROV
+WHERE
+Art = 'Abborre'
+AND 
+Lokal_ID IN(54) 
+AND 
+Fiske IN('Nordiska nät augusti', 'Nätlänk augusti'));
+```
+
+## 2.5 Load sex data {#sexdata}
+
+```{sql, connection="AQ_con", output.var = "Kul_sex"}
+SELECT Lokal, Fiskeår, Längdgrupp, ANTAL_HANAR, ANTAL_HONOR, ANTAL
+FROM AquaDW_prod.mart.KUL_STICKPROVSUTFALL ks
+WHERE
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti');
+```
+
+# 3 Transform data {#transformdata}
+
+Here we transform and analyse data. Age-length keys for females are derived, proportion of females in samples are calculated and data is subdivided into age- or length classes.
+
+## 3.1 Remove NAs from individual and catch data sets {#filterdata}
+
+```{r}
+##| eval: FALSE
+Kul_data <- Kul_data %>% 
+            filter(!is.na(Längdgrupp),!is.na(Antal)) %>% # remove cases with no length info
+            uncount(Antal, .remove = FALSE) # expand df such that each row is one individual
+
+Kul_ind <- Kul_ind %>% 
+           filter(!is.na(Slutlängd_cm),!is.na(Ålder)) # we cant use NAs
+```
+
+## 3.2 Find proportion of females in samples
+
+Here we derive proportion of females in samples as we only have individual data on females. Hence, the models we´re creating only consider the development of females in the stocks.
+
+#### 3.2.1 Proportion females per year
+
+Here we transform sex information per year for perch.
+
+```{r}
+female_prop_Y <- Kul_sex %>% 
+  mutate(females = case_when(ANTAL_HANAR==ANTAL ~ 0, # Number of males equal to total -> 0 females
+                             !is.na(ANTAL_HONOR) ~ ANTAL_HONOR, # Number of females reported
+                             .default = NA),
+         total = case_when(!is.na(ANTAL) ~ ANTAL, # Total sample reported
+                           (is.na(ANTAL)) & 
+                           (!is.na(ANTAL_HANAR) & !is.na(ANTAL_HONOR)) 
+                           ~ ANTAL_HANAR+ANTAL_HONOR,# Females and males reported -> prop can be calculated
+                           .default=NA),
+         female_prop=females/total # proportion females in size class from sample
+                                  )
+```
+
+### 3.2.2 Proportion females per area (i.e. aggregate data across years for each area) {#female_prop_area}
+
+Here we aggregate data across years in order to calculate the proportion of females per length group and area.
+
+```{r}
+female_prop_area <- 
+  female_prop_Y %>% 
+  filter(!if_any(c("females","total"),is.na)) %>% # remove cases where either females or the total number individuals in samples is na
+  group_by(Lokal, Längdgrupp) %>%
+  summarize(total = sum(total), 
+            females = sum(females),
+            prop_females = sum(females)/sum(total)) %>%
+  ungroup()
+
+```
+
+## 3.3 Calculate CPUE per size class {#cpue-sizeclass}
+
+Here we arrange data such that catches of perch per "FISKE_ID"(unique identifier of a testfishing(year and area)) are categorized into different size bins, i.e. number of individuals caught per length class. In a second step we join the effort and catch data such that we can calculate CPUE per length-class.
+
+```{r}
+##| eval: FALSE
+
+# define breaks in length classes to use 
+intervals <- c(0,12,15,18,21,24,27,30,33,Inf)
+
+# derive proportion of females per interval and area
+female_prop_area_lclass <- female_prop_area %>%
+  mutate(interval=cut(Längdgrupp,breaks=intervals,right=FALSE, include.lowest = TRUE)) %>%
+  group_by(Lokal, interval) %>%
+  summarize(prop_females = sum(females)/sum(total)) %>%
+  ungroup()
+
+# derive number of individuals per length class(rows) and year(column)
+lclass_mat <- Kul_data %>%
+  mutate(interval=cut(Längdgrupp,breaks=intervals,right=FALSE, include.lowest = TRUE)) %>% # define length intervals for observations
+  group_by(Lokal, FISKE_ID,interval) %>% # group by year and length interval
+  summarize(n=n()) %>% # count number of observations for a given interval and year
+  ungroup() %>% 
+  complete(FISKE_ID,interval, fill=list(n=0)) %>% # include all factor levels(0 to non-existing data)
+  filter(!is.na(interval),!is.na(Lokal)) # remove na observations cause by length 0 individuals in data
+
+
+# join effort and female proportion data
+join_eff_lclass <- right_join(effort, lclass_mat, by=c("Lokal","FISKE_ID")) %>%
+     left_join(female_prop_area_lclass,by=c("Lokal","interval")) %>%
+     mutate(CPUE=n*prop_females/effort)
+  
+```
+
+## 3.4 Estimate age based indices using ALK
+
+In this section we:
+
+1.  [Derive age-length keys](#ALKs)([ALK](#ALK-function)) using [age-read individuals](#inddata)
+2.  [Estimate age of individual fish](#estfishage) using [ALKs](#ALKs) and the [full data set with fish lengths](#catchdata).
+3.  [Summarize catches per age class](#fishperlengthclass)
+4.  [Restructure the summarized catches (3) per age into cohorts](#cohort).
+5.  [Estimate year-class strength](#year-class-strength)
+6.  [Estimate growth parameters for the von-Bertanalanffy growth model](#growth_data)
+
+### 3.4.1 ALK function {#ALK-function}
+
+This function is used for deriving age-length keys for data subsets. It takes as input the observed lengths in [the total catch](#catchdata) (*lengthD*) and [age and length data](#inddata) from a subsample of the total catch to derive an age-length key (i.e. the probability of age given length). This is sometimes called a forward age-length key [(Ailloud & Hoenig 2019 ICES J Sci)](https://academic.oup.com/icesjms/article/76/6/1515/5480389).
+
+```{r}
+applyALK <- function(lengthD,indD){
+
+# Find number of individuals per length and age in individual data
+LADat <- xtabs(~Slutlängd_cm + Ålder, data=indD) # number of observations per age- and length-class 
+ind_lidx <- sort(unique(indD$Slutlängd_cm)) # length groups in individual data
+L_lidx <- sort(unique(lengthD$Längdgrupp)) # Length groups in length data
+
+# initialize Length/age group matrix which will be fille later
+l_agr_mat <- matrix(NA,length(L_lidx),dim(LADat)[2])
+rownames(l_agr_mat) <- L_lidx 
+colnames(l_agr_mat) <- colnames(LADat)
+l_agr_mat[L_lidx %in% ind_lidx,] <- LADat[rownames(l_agr_mat)[L_lidx %in% ind_lidx],]
+rowidNA <- as.numeric(rownames(l_agr_mat)[apply(l_agr_mat, 1, anyNA)]) # columns to fill with data
+
+# Fill in values for length groups with no individual data (borrow age data from lower or higher length-classes)
+for(i in rowidNA){
+  if(i<min(ind_lidx)){
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- LADat[as.character(min(ind_lidx)),] # take the smallest length group from ind data if Length observations are smaller than individual data
+  } else if (i>max(ind_lidx)) {
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- LADat[as.character(max(ind_lidx)),] # take age dist from the largest length group from ind data if Length observations are larger than individual data 
+  }else{    
+  # take the sum of age distributions for closest length groups if length group is not part of individual data 
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- colSums(LADat[c(as.character(min(ind_lidx[ind_lidx>i])), 
+                                                          as.character(max(ind_lidx[ind_lidx<i]))),])
+  }
+  }
+
+# convert from number of ind per age- and length class to proportion of age-classes per length-class in sample.
+ALK <- prop.table(l_agr_mat,margin=1)
+return(ALK)
+}
+```
+
+### 3.4.2 Derive ALKs for each subset of data (FISKE_ID) {#ALKs}
+
+Age-length keys are here derived for each subset of data(FISKE_ID) using data of [indivual age-read and length measured fish](#inddata) in combination with the [full data set](#catchdata). The full data set is only used to give information on the number of length-classes needed in the age-length keys.
+
+```{r}
+
+# Apply function to grouped dataframes
+ALK_all <- Kul_data %>%
+  group_by(Lokal, År) %>% # Group length data from full sample using FISKE_ID
+  nest() %>%  
+  inner_join( # Append individual data to full length sample data set group wise
+    Kul_ind %>%
+      group_by(Lokal, År) %>%
+      nest(),
+    by = c("Lokal","År")
+  ) %>%
+  mutate(
+    ALK = purrr::map2(data.x, data.y, applyALK) # derive ALK for each subset of data
+  ) %>%
+    ungroup() %>%
+  select(-data.x, -data.y)
+```
+
+### 3.4.3 Estimate age of individual fish {#estfishage}
+
+Here we use ALK and the full data set, subsetted by FISKE_ID, to estimate age of individual fish in the full length data set.
+
+```{r}
+
+# For reproducibility set seed
+set.seed(123)
+
+# sample individual age across all individuals (assuming only females in the sample)
+ind_age <- Kul_data %>%
+  group_by(Lokal,År) %>%
+  nest() %>%
+  inner_join(
+    ALK_all %>%
+      group_by(Lokal,År),
+    by = c("Lokal","År")
+  ) %>%
+  mutate(
+    ind_age = map2(data, ALK, function(x,y) {FSA::alkIndivAge(y,~ Längdgrupp,data=x)$age})
+  ) %>%
+  unnest(c(ind_age, data)) %>% 
+  ungroup() %>%
+  select(Lokal, År, Längdgrupp, ind_age)
+```
+
+### 3.4.4 Randomly assign individual sex
+
+Here we randomly assign sex to individuals using a bernoulli model:
+
+$$
+X_{ijkl} \sim \text{Bern}(p_{jk})
+$$
+
+where $X_{ijk}$ is a binary random variable and ($p_{jk}$) is the probability that an individual perch in area *j* and age class *k* is a female. $p_{jk}$ is estimated ($\hat{p_{jk}}$) using [sex proportions](#female_prop_area) observed in samples of [sex](#sexdata).
+
+```{r}
+# for reproducibility set seed
+set.seed(123)
+
+# join sex probabilities to individual data
+ind_sex <- ind_age %>%
+  left_join(female_prop_area,by=c("Lokal","Längdgrupp"))
+
+# randomly sample sex based on sex probabilities per length group
+ind_sex$isfemale <- rbinom(n=nrow(ind_sex),size=1,p=ind_sex$prop_females)
+
+# The previous line produces a few na:s for age groups that do not occur in the sex data. For these lines assign females to large individuals
+ind_sex$isfemale[is.na(ind_sex$isfemale) & (ind_sex$Längdgrupp>30)] <- 1
+
+# for small ones randomly sample sex based on 50-50 chance of male-female
+ind_sex$isfemale[is.na(ind_sex$isfemale)] <- rbinom(n=sum(is.na(ind_sex$isfemale)),size=1,p=0.5) 
+  
+```
+
+### 3.4.4 Summarize number of fish per length-class {#fishperlengthclass}
+
+Summarize the total number of female perch per age-class and FISKE_ID.
+
+```{r}
+age_dist <- ind_sex %>% 
+            filter(isfemale==1) %>% # we only consider females here
+            group_by(Lokal,År,ind_age) %>%
+            summarize(n=n()) %>%
+            ungroup() %>% 
+            complete(Lokal,År,ind_age,fill=list(n=0)) %>%
+            rename(age=ind_age)
+```
+
+```{r}
+join_age_effort <- left_join(age_dist,effort,by=c("Lokal","År")) %>%
+                   mutate(CPUE_age=n/effort) %>%
+                   select(-"FISKE_ID")
+```
+
+### 3.4.5 Year-class data {#cohort}
+
+In order to follow a specific cohort we here make a function that restructures the age distribution data (join_age_effort). Using the output of this function it is possible to follow each cohort by filtering the data using year-class.
+
+-   cohort function
+
+```{r}
+cohort_fc <- function(data) { 
+
+# init
+cohort <- data.frame() # initialize a data.frame which will later on be filled with data
+
+# loop over years and age-classes
+for(t in unique(data$År)){ # loop over years
+for(a in 1:length(unique(data$age))){
+  if(all(!(data$age==(a-1) & data$År==t))){
+  value_temp <- data.frame(year=t,
+                  age=a-1,
+                  "yearclass"=as.integer(t-data$age[a]), 
+                  value=NA)  
+  } else{
+  value_temp <- data.frame(year=t,
+                  age=a-1,
+                  "yearclass"=as.integer(t-data$age[a]),
+                  value=data$CPUE_age[(data$age==(a-1)) & data$År==t])
+  }
+  cohort <- rbind(cohort,value_temp)
+}  
+}
+return(cohort)
+}
+```
+
+-   Cohorts for all data subsets (i.e. all areas)
+
+```{r}
+cohort_all <- join_age_effort %>%
+  group_by(Lokal) %>%
+  nest() %>%
+  mutate(cohort_Lokal=map(data, cohort_fc)) %>%
+  select(-data) %>%
+  ungroup() %>%
+  unnest(cohort_Lokal)
+```
+
+### 3.4.6 Estimate year-class strength {#year-class-strength}
+
+For reference we here calculate year-class strength for each site and year-class. Year-class strength is calculated as the intercept($\alpha_0$) in this linear model:
+
+$$
+\log(y_i) = \alpha_0 + \alpha * \text{age}_i + \epsilon_i
+$$ where ($\log(y_i)$) is the natural logarithm of catch-per-unit effort estimate for age class *i*, ($\text{age}_i$) is the age group *i* and ($\epsilon_i$) is the error term.
+
+We only make estimates for year classes with observations for more than two age-classes. Moreover, we only use data for ages above the peak in the [age catch curves](#CPUE%20per%20age%20group). This infers using data for ages one and above for all areas except Gaviksfjärden, Kinnbäcksfjärden, Långvindsfjärden, Norrbyn and Råneå where ages two and above are used.
+
+```{r}
+year_class_strength <- cohort_all %>% 
+  filter(age!=0 & # remove zero year old individuals from calculation as they are not representatively sampled in the nets
+         (!(age <= 1 & Lokal %in% 
+          c("Gaviksfjärden","Kinnbäcksfjärden","Långvindsfjärden","Norrbyn","Råneå")))) %>% 
+  filter(!value==0) %>% # remove cases with zeros as they affect lm estimates
+  group_by(Lokal,yearclass) %>%
+  nest() %>%
+  mutate(estimate=map(data, function(x){
+    if(length((x$value))<=2){ # only make lm estimation if more than 2 data points
+    y <-  NA
+    }else{
+    y <- coef(lm(log(value)~age,data=x))[1]
+    }
+    return(y)
+    }
+    )) %>%
+  ungroup() %>%
+  unnest(estimate) %>%
+  select(-data) %>%
+  arrange(Lokal,yearclass)
+
+```
+
+## 3.5 Estimate growth parameters
+
+Here we estimate growth parameters(von Bertalanffy). Non-linear least squares using the function growth from package fishmethods is used to estimate parameters.
+
+### 3.5.1 Growth for individual samples(#growth_data)
+
+```{r, error=FALSE}
+von_Bertalanffy_params <- Kul_ind %>%
+  group_by(Lokal, År) %>% # Estimate growth parameters per FISKE_ID
+  nest() %>%
+  mutate(
+    ind_params = map(data, safely(function(x) {
+      fit <- fishmethods::growth(intype=1, unit=1, size=x$Slutlängd_mm, age=x$Ålder, # input data
+                                 Sinf=700, K=0.4, t0=-1,  # initial values for nls estimation
+                                 graph=FALSE) # don´t plot graphs
+      est <- fit$vout$m$getPars() # estimate von Bertalanffy growth curve
+      return(est)}, 
+      otherwise=c("Sinf"=NA, "K"=NA, "t0"=NA))) # capture error situations(these are NAs in the returned tibble)
+  ) %>%
+  unnest(ind_params) %>%
+  filter(names(ind_params)!="error") %>% # remove error column
+  unnest_wider(ind_params) %>% # put parameters in each column
+  ungroup() %>%
+  select(-c(data))
+
+```
+
+von_Bertalanffy function for predictions
+
+```{r}
+von_Bertalanffy_fcn <- function(data,age){
+L <- c() # initialize an empty length vector
+for(i in 1:length(age)){
+L[i]=data$Sinf*(1-exp(-data$K*(age[i]-data$t0)))
+}
+return(data.frame("L"=L,"age"=age))
+}
+
+```
+
+```{r}
+
+# define ages for predicting length() 
+age <- c(0:10)
+
+# estimate length for ages defined above for individual subsets of inidividual data
+growth_all <- von_Bertalanffy_params %>%
+  group_by(Lokal, År) %>%
+  nest() %>%
+  mutate(vB_growth=map(data, von_Bertalanffy_fcn, age)) %>%
+  select(-data) %>%
+  ungroup() %>%
+  unnest(vB_growth)
+```
+
+```{r}
+join_growth_effort <- left_join(growth_all, effort, by=c("Lokal","År"))
+```
+
+### 3.5.2 Growth when all data is pooled per area
+
+```{r}
+von_Bertalanffy_params_pooled <- Kul_ind %>%
+  group_by(Lokal) %>% # Estimate growth parameters per Lokal(area)
+  nest() %>%
+  mutate(
+    ind_params = map(data, safely(function(x) {
+      fit <- fishmethods::growth(intype=1, unit=1, size=x$Slutlängd_mm, age=x$Ålder, # input data
+                                 Sinf=700, K=0.4, t0=-1,  # initial values for nls estimation
+                                 graph=FALSE) # don´t plot graphs
+      est <- fit$vout$m$getPars() # estimate von Bertalanffy growth curve
+      return(est)}, 
+      otherwise=c("Sinf"=NA, "K"=NA, "t0"=NA))) # capture error situations(these are NAs in the returned tibble)
+  ) %>%
+  unnest(ind_params) %>%
+  filter(names(ind_params)!="error") %>% # remove error column
+  unnest_wider(ind_params) %>% # put parameters in each column
+  ungroup() %>%
+  select(-c(data))
+```
+
+```{r}
+
+# define ages for predicting length() 
+age <- c(0:10)
+
+# estimate length for ages defined above for individual subsets of inidividual data
+growth_pooled <- von_Bertalanffy_params_pooled %>%
+  group_by(Lokal) %>%
+  nest() %>%
+  mutate(vB_growth=map(data, von_Bertalanffy_fcn, age)) %>%
+  select(-data) %>%
+  ungroup() %>%
+  unnest(vB_growth)
+```
+
+# 4 Visualize data {#visdata}
+
+Here we visualize [length- and age data for perch caught with gear K064](#loaddata). Plots considered are:
+
+1.  [CPUE per length class](#CPUE_per_length_class)
+
+2.  [CPUE per age class](#CPUE_per_age_group)
+
+3.  [Sex ratio](#plotsexratio)
+
+4.  [Cohort evolution](#plotcohort)(i.e. how the abundance in a given year-class changes over time)
+
+5.  [year-class strength](#yearclasstrength) (i.e. [back-calculated number of individuals at age 0](#year-class-strength))
+
+6.  [Indivual age of fish](#age-length_plot) (i.e. the raw data on age and length from the [subsampled individual data](#inddata))
+
+7.  [Age-length keys for all age read fish within areas](#ALKarea)
+
+8.  [Growth curves](#growth) using samples of age read individuals.
+
+9.  Location
+
+## 4.1 Sex ratio {#plotsexratio}
+
+Here we plot the sex ratio as a function of perch lengthclass. In the figure the lightgreen line illustrates the proportion of females across all years for a given area. The other lines represent year specific female proportions.
+
+```{r}
+
+# Female proportions per year and area
+ggplot(female_prop_Y) + geom_smooth(aes(x=Längdgrupp,y=female_prop, group=as.factor(Fiskeår), colour=as.factor(Fiskeår),weight = total),se=FALSE) + geom_smooth(data=female_prop_area,aes(x=Längdgrupp, y=prop_females, weight=total), colour="green") + facet_wrap(~Lokal) + scale_color_viridis_d(option="magma") + ylim(-0.2,1.2)
+
+# Female proportions per area
+ggplot(data=female_prop_area,aes(x=Längdgrupp,y=prop_females,weight=total,group=Lokal,colour=Lokal)) +
+  geom_smooth(se=FALSE)
+
+```
+
+## 4.2 CPUE per length-class {#CPUE_per_length_class}
+
+```{r}
+ggplot(join_eff_lclass,aes(x=År,y=log(CPUE),colour=interval)) + 
+  geom_line() +
+  geom_point() +
+  facet_wrap(vars(Lokal))
+
+```
+
+## 4.3 CPUE per age group {#CPUE_per_age_group}
+
+### 4.3.1 Plot of CPUE per age-class and area
+
+```{r CPUE per age group}
+ggplot(join_age_effort, aes(x=age,y=CPUE_age,group=age)) + geom_boxplot() + facet_wrap(vars(Lokal))
+```
+
+### 4.3.2 Conclusion
+
+Based on the catch curves above it appears as if perch at age zero are not representatively sampled in K064. For some of the areas it also seems like age one individuals are neither representatively sampled. Hence, for later analyses, looking at year-class strength, age 2 is set as the minimum age for Gaviksfjärden, Kinnbäcksfjärden, Långvindsfjärden, Norrbyn and Råneå. This makes sense as these areas are located in the northern part of Sweden where perch likely grow slower and thus recruit to the fishing gear at a higher age compared to in more southern areas.
+
+## 4.4 Cohorts {#plotcohorts}
+
+### 4.4.1 CPUE per age group
+
+```{r}
+ cohort_all %>% 
+  filter(age!=0 & # remove zero year old individuals from calculation as they are not representatively sampled in the nets
+         (!(age <= 1 & Lokal %in% 
+          c("Gaviksfjärden","Kinnbäcksfjärden","Långvindsfjärden","Norrbyn","Råneå")))) %>% 
+  filter(!value==0) %>%
+ggplot(.,aes(x=age,y=log(value),group=as.factor(yearclass), colour=as.factor(yearclass))) + 
+  geom_point() + 
+  geom_smooth(method="lm",se=FALSE) +
+  facet_wrap(vars(Lokal))
+```
+
+### 4.4.2 Cohorts
+
+```{r}
+ cohort_all %>% 
+  filter(age!=0 & # remove zero year old individuals from calculation as they are not representatively sampled in the nets
+         (!(age <= 1 & Lokal %in% 
+          c("Gaviksfjärden","Kinnbäcksfjärden","Långvindsfjärden","Norrbyn","Råneå")))) %>% 
+  filter(!value==0) %>%
+ggplot(.,aes(x=year,y=value,group=as.factor(yearclass), colour=as.factor(yearclass))) + 
+#  geom_point(aes(colour=as.factor(age))) + 
+  geom_line() +
+  scale_fill_viridis("magma") +
+  ylab("CPUE(#ind of age-group per net)") +
+#  geom_smooth(method="lm",se=FALSE) +
+  facet_wrap(vars(Lokal),scales="free_y")
+```
+
+### 4.4.3 Cohorts(log scale)
+
+```{r}
+ cohort_all %>% 
+  filter(age!=0 & # remove zero year old individuals from calculation as they are not representatively sampled in the nets
+         (!(age <= 1 & Lokal %in% 
+          c("Gaviksfjärden","Kinnbäcksfjärden","Långvindsfjärden","Norrbyn","Råneå")))) %>% 
+  filter(!value==0) %>%
+ggplot(.,aes(x=year,y=log(value),group=as.factor(yearclass), colour=as.factor(yearclass))) + 
+#  geom_point(aes(colour=as.factor(age))) + 
+  geom_line() +
+  scale_fill_viridis("magma") +
+  ylab("Log(CPUE(#ind of age-group per net))") +
+#  geom_smooth(method="lm",se=FALSE) +
+  facet_wrap(vars(Lokal),scales="free_y")
+```
+
+## 4.5 Year-class strength estimates {#yearclasstrength}
+
+```{r}
+#| warning: FALSE
+
+ggplot(year_class_strength,aes(x=yearclass, y=estimate)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(vars(Lokal),scales = "free_y")
+```
+
+### 4.5.1 Conclusion
+
+Year-class strength appears to be varying quite a bit. The hot summer 2018 seems to have been a good recruitment year for perch.
+
+## 4.6 Age-length plot for age-read individuals {#age-length_plot}
+
+```{r}
+
+#-----------------------------------#
+# Age distribution per length class #
+#-----------------------------------#
+ggplot(data=Kul_ind,
+                            aes(x=Slutlängd_cm,y=Ålder)) +
+       geom_point() +
+       geom_vline(xintercept=12, colour="red") + # add reference to 12 cm peak of catch curve 
+       facet_wrap_paginate(~Lokal+År, nrow=3,ncol=3,scales="free") -> ALK_per_Lokal
+
+# number of plots
+nb_pages <- n_pages(ALK_per_Lokal)
+
+# plot 9 basins at a time
+for(i in 1:nb_pages){
+ggplot(data=Kul_ind,
+                            aes(x=Slutlängd_cm,y=Ålder)) +
+       geom_point() +
+       geom_vline(xintercept=12, colour="red") + # add reference to 12 cm peak of catch curve 
+       facet_wrap_paginate(~Lokal + År, nrow=3,ncol=3,scales="free", page=i) +
+       ggtitle("Age-length plot") -> ALK_per_Lokal
+  print(ALK_per_Lokal)
+}
+
+
+```
+
+## 4.7 Age-length keys for all aged fish per area {#ALKarea}
+
+The figures here display the probability that perch from a given size class has a specific age.
+
+```{r}
+
+# derive ALK for each area using data from all age and length sampled individuals 
+ALK_area <- ind_sex %>%
+  group_by(Lokal) %>% # Group length data from full sample using FISKE_ID
+  nest() %>%  
+  inner_join( # Append individual data to full length sample data set group wise
+    Kul_ind %>%
+      group_by(Lokal) %>%
+      nest(),
+    by = "Lokal"
+  ) %>%
+  mutate(
+    ALK = map2(data.x, data.y, applyALK) # derive ALK for each subset of data
+  ) %>%
+    ungroup() %>%
+  select(-data.x, -data.y)
+
+# Plot ALK for each area(Sorry!! This is ugly code!!!)
+for(i in 1:nrow(ALK_area)){
+df <- as.data.frame(ALK_area$ALK[[i]])
+df$lengthclass <- rownames(df)
+
+long_df <- df %>%
+  pivot_longer(
+    cols=-lengthclass,
+    names_to = "age",
+    values_to = "probability"
+  )
+
+graph <- ggplot(long_df,aes(x=as.numeric(lengthclass),y=as.numeric(age),fill=probability)) +
+  geom_tile()+
+    scale_fill_gradient(low = "blue", high = "red") +
+  labs(title=ALK_area$Lokal[[i]],
+       x="lengthclass(cm)",
+       y="age(years)")
+
+print(graph)
+}
+```
+
+## 4.8 Individual growth {#growth}
+
+Here we plot growth curves for perch in the different areas. Plots are both made per year and area as well as from the total sample of individuals from an area.
+
+### 4.8.1 Growth per year
+
+```{r}
+ggplot(data=join_growth_effort,aes(x=age,y=L,colour=as.factor(År))) +
+  geom_line() +
+  geom_smooth(col="black") +
+  facet_wrap(vars(Lokal),scales="free_y")
+```
+
+### 4.8.2 Growth per area
+
+```{r}
+ggplot(data=growth_pooled,aes(x=age,y=L,colour=Lokal)) +
+  geom_line()
+```
+
+## 4.9 Locations
+
+Here we display the locations of all areas(Need to download data from ICES-can not distribute here)
+
+```{r}
+df_loc <- unique(cbind(Lokal=Kul_data$Lokal, Lat=Kul_data$Lat_grader_lokal, Long=Kul_data$Long_grader_lokal))
+df_loc <- as.data.frame(df_loc)
+
+# Create sf object
+sf_loc <- st_as_sf(df_loc, coords = c("Long", "Lat"), crs = 4326)
+
+# load map of sweden
+sweden <- ne_countries(scale="medium", returnclass="sf", country="Sweden")
+
+# load ICES subdivision
+ICES_subdiv <- read_sf("../Data/ICES_areas/ICES_Areas_20160601_cut_dense_3857.shp", query="SELECT * FROM \"ICES_Areas_20160601_cut_dense_3857\" WHERE subdivisio IN ('25','26','27','28','29','30','31','32')") 
+ICES_subdiv <- st_transform(ICES_subdiv,crs="EPSG:3006") # convert to WGS84 long/lat
+
+# plot map
+tm_shape(sweden) +
+  tm_borders() +
+  tm_fill("orange") +
+tm_shape(ICES_subdiv) +
+  tm_polygons(fill="SubDivisio",
+              lwd=2) +
+  tm_shape(sf_loc) +
+  tm_symbols(shape=16, col = "red", size=1, border.col="black", border.lwd=0.5) +
+  tm_text("Lokal", size=0.5)
+
+```

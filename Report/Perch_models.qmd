@@ -1,0 +1,3226 @@
+---
+title: "Perch_model"
+author: "Torbjörn Säterberg"
+date: today  
+format: html
+embed-resources: true
+self-contained: true
+editor: visual
+code-fold: true
+error: FALSE
+warning: FALSE
+message: FALSE
+toc: true
+toc-depth: 3
+lang: sv  
+---
+
+# 1 Introduction
+
+This script is used as a master-script for running stock assessment models using STAN. The model considered is an age-based model. We first load data from the KUL data base and thereafter reformat the data such that it can be used in the assessment model. The model only considers the evolution of females in the stocks. Annual age-length keys are used to transform length information to age data in order to follow cohorts of perch in the model.
+
+## 1.1 Model formulation
+
+The model considered is an age-based model using survey data only. Similar to many stock assessment models it follows the evolution of fish cohorts and tries to draw inference from these analyses. The model does not address any relationship between fish catches and fishing mortality. It is merely estimating total mortality rates (annual) per age-class and year. Further, the model can only produce estimates of population dynamics in a relative sense, that is, it can not be used to estimate variability in total stock size, but instead reflects the scale of the survey data. Here, we are using multimesh gill-net data, and hence, the unit considered is number of perch caught per net and night.
+
+### 1.1.1 Process model{# Process model}
+
+The population dynamics follow a standard cohort model:
+
+$$
+N[a, t] = 
+\begin{cases} 
+N[1, t] & \text{if } a = 1 \\
+N[a-1, t-1] \cdot \exp(-Z[a-1, t-1]) & \text{if } a > 1 \text{ and } a \neq A \\
+N[a-1, t-1] \cdot \exp(-Z[a-1, t-1]) + N[a, t-1] \cdot \exp(-Z[a, t-1]) & \text{if } a = A
+\end{cases}
+$$ where $N[a, t]$ is the population size of age-class *a* in time step *t*, $Z[a-1, t-1]$ is the mortality rate experience by age-class *a-1* from the census at time *t-1* to *t*, and *A* is the oldest age-class considered in the model (a.k.a. plusgroup). Note that $a=1$ defines the first age-class considered in the model (the age at which fish tend to recruit to the gear). This model could be extend to include selectivity by the fishing gear. However, any clear information on selectivity of the coastal nets is not available, although a number of studies using similar multi-mesh gillnets suggest that size selectivity is minor.
+
+Recruitment of perch is likely temperature dependent and such information could be used to model $N[1, t]$. For simplicity, however, recruitment to the fishing gear is model as a random process following:
+
+$$
+\log(N[1, t]) \sim \text{normal}(\mu_{N_1}, \sigma_{N_1})
+$$ where $\mu_{N_1}$ is average recruitment across years and $\sigma_{N_1}$ is the standard deviation of recruitment across years.
+
+Total mortality per age-class and year ($Z[a, t]$) is modeled following [Nielsen & Berg (2014)](https://www.sciencedirect.com/science/article/pii/S0165783614000228?via%3Dihub), who modeled fishing mortality per age-class as a random-walk process with innovations correlated across age-classes. The intuition behind this choice is that mortality is likely to develop more similarly for age-classes that are adjacent as compared to age-classes that are far apart in the age-structure. The random walk process was modeled on the ln-scale in order to avoid the implausible outcome of growth instead of mortality. The random walk process is defined as follows:
+
+$$
+\log Z_{t} = \log Z_{y-1} + \epsilon_t, \quad \epsilon_t \sim \mathcal{N}(0, \Sigma)
+$$ where $Z_t$ is vector with mortality rates per age-class, and $epsilon_t$ is a vector with multivariate normally distributed process errors with a covariance structure following:
+
+$$
+\Sigma_{a,\tilde{a}} = \rho^{|a - \tilde{a}|} \sigma_a \sigma_{\tilde{a}}
+$$ where $\tilde{a}$ and $a$ define two age-classes, $\sigma_a$ and $\sigma_{\tilde{a}$ their respective age-class specific standard deviations, and $\rho$ the general correlation between age-classes.
+
+The model is coupled to data using a negative binomial likelihood parameterized in terms of its [mean, and a dispersion parameter](https://mc-stan.org/docs/2_20/functions-reference/nbalt.html):
+
+$$
+y_{i,a,t} \sim \text{NegBin}(N[a, t], \phi)
+$$
+
+where *i* is an index of the observation, *a* is the age-class, *t* is the time index and $\phi$ is a dispersion parameter scaling the variance such that:
+
+$$
+E[Y] = \mu
+$$
+
+and
+
+$$
+\text{Var}[Y] = \mu + \frac{\mu^2}{\phi}
+$$
+
+### 1.1.2 Priors
+
+Negative Binomial Dispersion Parameter ($\phi$):
+
+$$
+\phi \sim \text{Gamma}(2, 1)
+$$ Natural mortality was initialized at the same value for all age-classes, using a relatively broad prior centered around 0.2, a value often used in various context for natural mortality:
+
+$$\log Z[a, 1] \sim N(\log(0.2), 1)$$ where $Z[a, 1]$ refers natural mortality for age-class $a$ at time 1, i.e. the first time step considered in the model.
+
+Standard deviations for the random walk natural mortality process were given the following priors:
+
+$$\sigma_a \sim |N(0,1)|$$ giving each age-class $a$ unique half-normal priors.
+
+The correlation across age-classes of innovations for the random walk natural mortality process was given a prior scaled such that correlation are constrained within the range (-1,1):
+
+$\rho \sim 2 \cdot Beta(2,2) -1$
+
+where $Beta$ defines the beta distribution($\epsilon (0,1)$).
+
+Initial Abundance at age $N[a,1]$:
+
+$$
+\log(N[a,1]) \sim \text{normal}\left(\log\left(\frac{1}{n}\sum_{i=1}^{n} y_{i,a,1}\right), 1\right) \quad \text{for } a > 1
+$$
+
+The abundance of the initial age-group is defined by the following distributions:
+
+$$
+\mu_{N_1} \sim \text{normal}\left(\frac{1}{t_{max}}\sum_{t=1}^{t_{max}}log\left(\frac{1}{n_t}\sum_{i=1}^{n_t} y_{i,1,t}\right), 1\right) \quad
+$$
+
+$$
+\sigma_{\log N1} \sim \text{cauchy}(0, 1) \quad \text{(hyperparameter)}
+$$
+
+### 1.1.3 Stock indicators {#stock_indicators}
+
+A number of stock indicators are estimate using the model described above. These are all plotted for each of the areas considered in the analysis. The indicators include:
+
+1.  Number of individuals caught per age-class
+2.  Total stock size
+3.  Age-class abundance\
+4.  Annual mortality
+5.  Annual age-class specific mortality
+6.  Mean age-class mortality
+7.  Recruitment index
+
+#### 1.1.3.1 Number of individuals caught per age-class
+
+In order order to compare the distribution of the number of individuals caught per age-class and year with observed data, the estimated model is used to simulate observations. To this end, observations are simulated using:
+
+$$
+\tilde{y}_{a,t} \sim \text{NegBin}(N_{sim}[a, t], \phi_{sim})
+$$
+
+where $\tilde{y}_{a,t}$ is the estimated number of observered individuals of age-class *a* at year *t*, $N_{sim}[a, t]$ is a posterior draw of the mean number of observed individuals and $\phi_{sim}$ is a posterior draw of the negative binomial dispersion parameter.
+
+#### 1.1.3.2 Total stock size
+
+The total stock size here infers the total number of females that have recruited to gear. This is estimated as: $$
+N_{tot}[t] = \sum_{a = {1}}^{plus_{group}} N_{sim}[a, t]
+$$ where $N_{sim}[a, t]$ is a posterior draw of the deterministic prediction of the number of individuals of age-class *a* at year *t*.
+
+#### 1.1.3.3 Age-class specific abundances
+
+This metric was derived directly from the posterior distribution of the [population process](#Population%20process) defined above, i.e. $N[a, t]$.
+
+#### 1.1.3.4 Annual mortality
+
+Annual mortality rates were derived using abundance weighted age-class specific mortality rates, following:
+
+$$
+\bar{Z}_t = \frac{\sum_{i} Z_{i,t} \cdot N_{i,t}}{\sum_{i} N_{i,t}}
+$$ \#### 1.1.3.5 Annual age-class mortality
+
+Annual age-class mortality is the posterior draws of the annual age-class mortality ($Z[a,t]$) defined above.
+
+#### 1.1.3.6 Mean age-class mortality
+
+Mean age-class mortality was calculated as a mean mortality for the full time series, for each age-class individually:
+
+$$
+\bar{Z}_a = \frac{\sum_{t=1}^{T} Z_{i,t}}{T}
+$$
+
+#### 1.1.3.7 Recruitment index
+
+As a measure of recruitment we here estimate the number of individuals at age 0+. As the census is in august this implies that the estimate considers number of perch individuals in august the same year as they were born. The recruitment index should not be interpreted as the number of individuals recruiting to the gear, but instead the number 0+-year-olds. We estimate 0+ recruitment assuming that young individuals experience the same mortality as other age-classes do on average.
+
+Recruitment $R$ was back calculated using annual mortality rates derived above. If the first age-class considered in a modal was zero-year-olds, then recruitment was directly assigned from numbers at age 0:
+
+$$
+R_t = N_{1,t}
+$$
+
+If, on the other hand, the first age-class considered in the model was 1-year-olds or older age-classes, then recruitment was back-calculated as:
+
+$$
+R_{t-N1\_age} = N_{1,t} \times \exp\left( \sum_{k=t-N1_{age}}^{t-1} \overline{Z}_k \right)
+$$
+
+where $N_{1,t}$ is the number of individuals at age $N1_{age}$ in year $t$, and $\overline{Z}_k$ is the geometric mean mortality in year $k$.
+
+### 1.1.4 Retrospective analysis {#Retrospective_analysis}
+
+Stability of parameter estimates was investigated using retrospective analyses. To this end, data sets were peeled, that is, the last observation in the time series was removed from the full data set and the model was refitted to this reduced data set. The procedure was repeated up to the point where five time points were removed from the full data set. Using this set of refitted models a metric of retrospective pattern, Mohns rho ($\rho_M$) was calculated according:
+
+$$
+\rho_M = \frac{1}{h} \sum_{t=1}^h \left( \frac{X_{T - t} - \hat{X}_{T - t}}{\hat{X}_{T - t}} \right)
+$$ where *h* is the number of peels, $X_{T - t}$ is the parameter of interest at time $T - t$ estimated using the peeled data set, and ${\hat{X}_{T - t}}$ is an estimate of the parameter of interest at time $T - t$ using the full data set. Moreover, retrospective patterns in parameter estimates were also investigated by plotting estimates from the different peels.
+
+The models ability to predict unseen future data, i.e. forecast accuracy, was assessed by comparing model predictions to a naive random walk prediction saying the abundance at time *t* equals the abundance at time *t-1*:
+
+$$
+\text{MASE} = \frac{\frac{1}{h} \sum_{t = T - h + 1}^{T} |\tilde{y}_t - y_t|}{\frac{1}{h} \sum_{t = T - h + 1}^{T} |y_t - y_{t - 1}|}
+$$ here, MASE stands for mean absolute scaled error, *h* is the number of peels, *T* is the time series length of the full time series, $\tilde{y}_t$ is the model prediction at time *t* using data up to time *t-1*, and $y_t$ is the observed data at time *t*.
+
+Mohns rho ($\rho_M$) and MASE were both calculated using medians of the posteriors of the parameters of interest. Mohns rho, $\rho_M$, was calculated both for age-class specific mortality rates and age-class specific abundances as these are the quantities of interest as output from the model. MASE was calculate only for age-class specific abundances as this is the only input data in the model. MASE was further calculated using the mean number of individuals caught per net-night and year as observation data, i.e. $y_t$ in the equation above.
+
+## 1.2 Required R-packages {#R-packages}
+
+```{r}
+#| label: load-packages
+require("RPostgres", quietly = TRUE) # postgres functionality in R
+library(DBI) # For database connection
+library(odbc) # Connection between R and relation database management systems
+library(ggforce, quietly=TRUE)  # added functionality to ggplot
+library(tidybayes) # working with posterior draws for bayesian models
+library(flextable) # plotting nice tables
+library(brms) # multilevel models in a bayesian context(similar to lmer)
+library(bayesplot) # plotting bayesian models
+library(future) # parallell computing 
+library(purrr) # working with functions in pipe
+library(modelr) # modeling functions with pipe
+library(tidyverse) # tidyverse functionality for working with data
+library(cmdstanr) # fitting stan models through R
+library(patchwork) # combining multiple ggplots
+```
+
+## 1.3 Connect to KUL-database {#dbconnection}
+
+```{r}
+# Connect to Aqua-datalagret
+AQ_con <- dbConnect(odbc(), 
+                         Driver = "SQL Server", 
+                         Server = "aquadw_prod.db.slu.se",
+                         USER = Sys.info()["user"], 
+                         Database = "AquaDW_prod", 
+                         Trusted_Connection = "TRUE", 
+                         encoding = "UTF-8")
+```
+
+# 2 Load data {#loaddata}
+
+Here we load data from the KUL data base. Data is extracted from three different views(tables) that are needed in the assessment model. For perch we are only interested in gill-net nights that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m depth. The tables we use are the following:
+
+-   KUL_OBSERVATION_NEW
+    -   This table includes information on effort.
+-   KUL_LANGDGRUPP
+    -   This table includes the number of individuals caught per length class
+-   KUL_INDIVID_NEW
+    -   This table includes data on disected individuals(length and age measurements of females)
+-   KUL_STICKPROVSUTFALL
+    -   This table includes information on number of females/males in the sample. This information is needed in order to find the number of females in the stocks.
+
+We load data using a direct read-only database connection to SLU datalagret and are only interested in K064 data series(Nordiska kustöversiktsnät). We load data from the following test fishing areas:
+
+-   Torhamn
+-   Holmön
+-   Forsmark
+-   Långvindsfjärden
+-   Norrbyn
+-   Kinnbäcksfjärden
+-   Gaviksfjärden
+-   Lagnö
+-   Råneå
+-   Asköfjärden
+-   Kvädöfjärden
+
+## 2.1 Load effort data {#effordata}
+
+Here we load and summarize effort data from the KUL table "KUL_OBSERVATION_NEW". For perch we are only interested in gill-net nights that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m depth.
+
+```{sql, connection="AQ_con", output.var = "effort"}
+-- CALCULATE EFFORT
+SELECT Lokal, Fångstområde, År, FISKE_ID, OBS_ID
+FROM AquaDW_prod.mart.KUL_OBSERVATION_NEW
+WHERE 
+Redskap_kod = 'K064' 
+AND 
+Störning='NEJ'
+AND 
+Godkänd ='JA'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND 
+STRATIFIERING NOT IN ('Djupstratum(0-10-20-30): 10-20 m', -- remove data from deepest strata
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m'); 
+```
+
+## 2.2 Load Catch data {#catchdata}
+
+Here we load catch data for length groups. For perch we are only interested in gill-nets that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m.
+
+```{sql, connection="AQ_con", output.var = "Kul_data"}
+SELECT *
+FROM AquaDW_prod.mart.KUL_LANGDGRUPP klmt --
+WHERE 
+Redskap_kod = 'K064' 
+AND
+Art = 'Abborre' 
+AND
+Godkänd='JA'
+AND 
+Störning='NEJ'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND
+Stratifiering NOT IN ('Djupstratum(0-10-20-30): 10-20 m',
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m')
+```
+
+## 2.3 Load individual data {#inddata}
+
+Here we load individual data. Length and age of individual fish.
+
+```{sql, connection="AQ_con", output.var = "Kul_ind"}
+SELECT * 
+FROM
+AquaDW_prod.mart.KUL_INDIVID_NEW
+WHERE
+Art = 'Abborre'
+AND 
+FISKE_ID IN
+(SELECT DISTINCT FISKE_ID
+FROM AquaDW_prod.mart.KUL_LANGDGRUPP klmt --
+WHERE 
+Redskap_kod = 'K064' 
+AND
+Art = 'Abborre' 
+AND
+Godkänd='JA'
+AND 
+Störning='NEJ'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND
+Stratifiering NOT IN ('Djupstratum(0-10-20-30): 10-20 m',
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m')
+)
+OR -- In Kvädöfjärden individuals are sampled using nätlänkar some years and nordiska nät other years.
+FISKE_ID IN 
+(SELECT DISTINCT FISKE_ID
+FROM
+AquaDW_prod.mart.KUL_INDIVIDPROV
+WHERE
+Art = 'Abborre'
+AND 
+Lokal_ID IN(54) 
+AND 
+Fiske IN('Nordiska nät augusti', 'Nätlänk augusti'));
+```
+
+## 2.4 Load sex data {#sexdata}
+
+Here we load information on proportion of males and females in subsamples of the data.
+
+```{sql, connection="AQ_con", output.var = "Kul_sex"}
+SELECT Lokal, Fiskeår, Längdgrupp, ANTAL_HANAR, ANTAL_HONOR, ANTAL
+FROM AquaDW_prod.mart.KUL_STICKPROVSUTFALL ks
+WHERE
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti');
+```
+
+# 3 Transform data {#transformdata}
+
+Here we transform and analyse data. Age-length keys are derived, proportion of females in the samples are calculated, data is subsetted into age-classes.
+
+## 3.1 Remove NAs from individual and catch data sets {#filterdata}
+
+```{r}
+Kul_data <- Kul_data %>% 
+            filter(!is.na(Längdgrupp),!is.na(Antal)) %>% # remove cases with no length info
+            uncount(Antal, .remove = FALSE) # expand df such that each row is one individual
+
+Kul_ind <- Kul_ind %>% 
+           filter(!is.na(Slutlängd_cm),!is.na(Ålder)) # we cant use NAs
+```
+
+## 3.2 Estimate age based indices using ALK
+
+In this section we:
+
+1.  [Derive age-length keys](#ALKs)([ALK](#ALK-function)) using [age-read individuals](#inddata)
+2.  [Estimate age of individual fish](#estfishage) using [ALKs](#ALKs) and the [full data set with fish lengths](#catchdata).
+3.  [Summarize catches per age class](#fishperlengthclass)
+4.  [Restructure the summarized catches (3) per age into cohorts](#cohort).
+
+### 3.2.1 ALK function {#ALK-function}
+
+This function is used for deriving age-length keys for data subsets. It takes as input the observed lengths in [the total catch](#catchdata) (*lengthD*) and [age and length data](#inddata) from a subsample of the total catch to derive an age-length key (i.e. the probability of age given length). This is sometimes called a forward age-length key [(Ailloud & Hoenig 2019 ICES J Sci)](https://academic.oup.com/icesjms/article/76/6/1515/5480389).
+
+```{r}
+applyALK <- function(lengthD,indD){
+
+# Find number of individuals per length and age in individual data
+LADat <- xtabs(~Slutlängd_cm + Ålder, data=indD) # number of observations per age- and length-class 
+ind_lidx <- sort(unique(indD$Slutlängd_cm)) # length groups in individual data
+L_lidx <- sort(unique(lengthD$Längdgrupp)) # Length groups in length data
+
+# initialize Length/age group matrix which will be fille later
+l_agr_mat <- matrix(NA,length(L_lidx),dim(LADat)[2])
+rownames(l_agr_mat) <- L_lidx 
+colnames(l_agr_mat) <- colnames(LADat)
+l_agr_mat[L_lidx %in% ind_lidx,] <- LADat[rownames(l_agr_mat)[L_lidx %in% ind_lidx],]
+rowidNA <- as.numeric(rownames(l_agr_mat)[apply(l_agr_mat, 1, anyNA)]) # columns to fill with data
+
+# Fill in values for length groups with no individual data (borrow age data from lower or higher length-classes)
+for(i in rowidNA){
+  if(i<min(ind_lidx)){
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- LADat[as.character(min(ind_lidx)),] # take the smallest length group from ind data if Length observations are smaller than individual data
+  } else if (i>max(ind_lidx)) {
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- LADat[as.character(max(ind_lidx)),] # take age dist from the largest length group from ind data if Length observations are larger than individual data 
+  }else{    
+  # take the sum of age distributions for closest length groups if length group is not part of individual data 
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- colSums(LADat[c(as.character(min(ind_lidx[ind_lidx>i])), 
+                                                          as.character(max(ind_lidx[ind_lidx<i]))),])
+  }
+  }
+
+# convert from number of ind per age- and length class to proportion of age-classes per length-class in sample.
+ALK <- prop.table(l_agr_mat,margin=1)
+return(ALK)
+}
+```
+
+### 3.2.2 Derive ALKs for each subset of data (FISKE_ID) {#ALKs}
+
+Age-length keys are here derived for each subset of data(FISKE_ID) using data of [indivual age-read and length measured fish](#inddata) in combination with the [full data set](#catchdata). The full data set is only used to give information on the number of length-classes needed in the age-length keys.
+
+```{r}
+
+# Apply function to grouped dataframes
+ALK_all <- Kul_data %>%
+  group_by(Lokal, År) %>% # Group length data from full sample using FISKE_ID
+  nest() %>%  
+  inner_join( # Append individual data to full length sample data set group wise
+    Kul_ind %>%
+      group_by(Lokal, År) %>%
+      nest(),
+    by = c("Lokal","År")
+  ) %>%
+  mutate(
+    ALK = purrr::map2(data.x, data.y, applyALK) # derive ALK for each subset of data
+  ) %>%
+    ungroup() %>%
+  select(-data.x, -data.y)
+```
+
+### 3.2.3 Estimate age of individual fish {#estfishage}
+
+Here we use ALK and the full data set, subsetted by FISKE_ID, to estimate age of individual fish in the full length data set.
+
+```{r}
+# For reproducibility set seed
+set.seed(123)
+
+# sample individual age across all individuals (assuming only females in the sample)
+ind_age <- Kul_data %>%
+  group_by(Lokal,År) %>%
+  nest() %>%
+  inner_join(
+    ALK_all %>%
+      group_by(Lokal,År),
+    by = c("Lokal","År")
+  ) %>%
+  mutate(
+    ind_age = map2(data, ALK, function(x,y) {FSA::alkIndivAge(y,~ Längdgrupp,data=x)$age})
+  ) %>%
+  unnest(c(ind_age, data)) %>% 
+  ungroup() %>%
+  select(Lokal, År, OBS_ID, Längdgrupp, ind_age)
+
+```
+
+## 3.3 Assign sex to individuals
+
+1.  First we calculate the [proportion of females](#female_prop_area) per area from annual sub-samples.
+2.  Second, we [randomly assign sex to individuals](#assignsex) based on the calculated proportion of females per area and length group.
+
+### 3.3.1 Proportion females per area (i.e. aggregate data across years for each area) {#female_prop_area}
+
+Here we aggregate data across years in order to calculate the proportion of females per length group and area.
+
+```{r}
+
+# female proportions per area and year
+female_prop_Y <- Kul_sex %>% 
+  mutate(females = case_when(ANTAL_HANAR==ANTAL ~ 0, # Number of males equal to total -> 0 females
+                             !is.na(ANTAL_HONOR) ~ ANTAL_HONOR, # Number of females reported
+                             .default = NA),
+         total = case_when(!is.na(ANTAL) ~ ANTAL, # Total sample reported
+                           (is.na(ANTAL)) & 
+                           (!is.na(ANTAL_HANAR) & !is.na(ANTAL_HONOR)) 
+                           ~ ANTAL_HANAR+ANTAL_HONOR,# Females and males reported -> prop can be calculated
+                           .default=NA),
+         female_prop=females/total # proportion females in size class from sample
+                                  )
+
+# femle proportions per area
+female_prop_area <- 
+  female_prop_Y %>% 
+  filter(!if_any(c("females","total"),is.na)) %>% # remove cases where either females or the total number individuals in samples is na
+  group_by(Lokal, Längdgrupp) %>%
+  summarize(total = sum(total), 
+            females = sum(females),
+            prop_females = sum(females)/sum(total)) %>%
+  ungroup()
+
+```
+
+### 3.3.2 Randomly assign sex to indivuals {#assignsex}
+
+Here we randomly assign sex to individuals using a bernoulli model:
+
+$$
+X_{ijkl} \sim \text{Bern}(p_{jk})
+$$
+
+where $X_{ijk}$ is a binary random variable and ($p_{jk}$) is the probability that an individual perch in area *j* and age class *k* is a female. $p_{jk}$ is estimated ($\hat{p}_{jk}$) using [sex proportions](#female_prop_area) observed in samples of [sex](#sexdata).
+
+```{r}
+# for reproducibility set seed
+set.seed(123)
+
+# join sex probabilities to individual data
+ind_sex <- ind_age %>%
+  left_join(female_prop_area,by=c("Lokal","Längdgrupp"))
+
+# randomly sample sex based on sex probabilities per length group
+ind_sex$isfemale <- rbinom(n=nrow(ind_sex),size=1,p=ind_sex$prop_females)
+
+# The previous line produces a few na:s for age groups that do not occur in the sex data. For these lines assign females to large individuals
+ind_sex$isfemale[is.na(ind_sex$isfemale) & (ind_sex$Längdgrupp>30)] <- 1
+
+# for small ones randomly sample sex based on 50-50 chance of male-female
+ind_sex$isfemale[is.na(ind_sex$isfemale)] <- rbinom(n=sum(is.na(ind_sex$isfemale)),size=1,p=0.5) 
+  
+```
+
+### 3.2.4 Summarize number of fish per age-class {#fishperageclass}
+
+```{r}
+age_per_obsid <- ind_sex %>%
+  group_by(Lokal,År,OBS_ID,ind_age) %>% 
+  summarize(N=sum(isfemale)) %>% # number of females per age and net
+  ungroup() %>%
+  complete(OBS_ID, ind_age, fill=list(N=0)) %>%
+  group_by(OBS_ID) %>% 
+  mutate(Lokal=if_else(is.na(Lokal),unique(Lokal[!is.na(Lokal)])[1],Lokal),
+         År=if_else(is.na(År),unique(År[!is.na(År)])[1],År)) %>%
+  ungroup()
+```
+
+```{r}
+
+# re-arrange effort data
+effort_ind <- effort %>% filter(FISKE_ID %in% unique(Kul_data$FISKE_ID)) # only include cases where FISKE_ID is included in individual data
+
+join_age_per_obsid_effort <- age_per_obsid %>% 
+                             right_join(effort_ind,by=c("Lokal","År","OBS_ID")) %>%  # we want to keep all net-night observations
+                             complete(OBS_ID, ind_age, fill=list(N=0)) %>% # include also zero catches(i.e. nets with no perch)
+                             group_by(OBS_ID) %>% 
+                             mutate(Lokal=if_else(is.na(Lokal),unique(Lokal[!is.na(Lokal)])[1],Lokal)) %>%#,
+                        #            År=if_else(is.na(År),unique(År[!is.na(År)])[1],År)) %>%
+                             ungroup() %>% 
+                             filter(!is.na(ind_age),!is.na(År)) %>% # we don´t want na:s produced by joining
+                             pivot_wider(id_cols=c(Lokal, År, OBS_ID),names_from=ind_age,values_from=N)
+
+```
+
+We want to find the peak in catch-curves here (maximum CPUE per age-class) for all areas. Also, if CPUE is lower than 0.2 for a given age-class it is considered to belong to the plusgroup. More specifically, an age-class is considered to belong to the plusgroup if its cpue is \< 0.2, alternatively if its the age-class just before the first age-class with a cpue \< 0.2. This is done in order to avoid fitting models with too little data at hand.
+
+```{r}
+ages_in_model <- 
+join_age_per_obsid_effort %>%
+  group_by(Lokal) %>%
+  summarize(across(`1`:`10`, ~mean(.x, na.rm = TRUE))) %>%
+  ungroup() %>%
+  pivot_longer(cols=`1`:`10`,names_to = "age_class", values_to = "CPUE") %>%
+  mutate(is_plus_group=CPUE<0.2) %>%
+  group_by(Lokal) %>%
+  summarize(plus_age=min(as.numeric(age_class)[is_plus_group])-1,
+            min_age=age_class[which.max(CPUE)])
+
+ft_ages_in_model <- autofit(flextable(ages_in_model))
+
+# print nice looking table
+ft_ages_in_model
+
+```
+
+# 4 Utility functions
+
+Here are a number of functions that are implement that are needed for plotting results for each area. Inputs and outputs for each function is described in the code chunk below.
+
+```{r}
+
+############
+## Figures #
+############
+
+#-------------------------------#
+# proportion of zeros in sample #
+#-------------------------------#
+prop_zero <- function(x) mean(x == 0)
+
+#-----------------------------#
+# Posterior predictive checks #
+#-----------------------------#
+# INPUTS
+# input_data : A list with data according to the data structure in age_model_STAN.stan
+# fit : A cmdstan model fit from the age_model_STAN.stan
+# n_rep : number of simulated posterior samples to use in figures
+#
+# OUTPUT
+# Posterior predictive checks checking:
+# 1. Density plots (simulated and observed number of individuals caught per net) per age - group
+# 2. Proportion of zeros, i.e. how many zeros are in simulated and observed data per age - group
+create_PPC_plots <- function(input_data, fit, n_rep, plottitle){
+
+# inits  
+post <- head(posterior::as_draws_matrix(fit$draws()),n_rep) # reorder posterior for plotting
+A <- input_data$A # number of age-groups
+color_scheme_set(set_wong_colours()[1:6])
+bayesian_p_prop_zero <- data.frame(age_class=names(input_data$Na1_init),p_value=NA)
+
+
+for(i in 1:A){
+    
+    string <- paste0("^yrep.*,",i,"]$")
+    col_ind <- grep(string, colnames(post), value=TRUE)
+    
+    # distribution of number of individuals caught and n_rep prediction of these
+    p1 <- ppc_dens_overlay(y = input_data$y[,i],
+                     yrep = post[,col_ind]) +
+             labs(title = paste0("Density age-group ",i," ",plottitle))
+    
+    p2 <- ppc_stat(y=input_data$y[,i], 
+             yrep = post[,col_ind], 
+             stat = "prop_zero", 
+             binwidth = 0.005) +
+             labs(title = paste0("Proportion zeros age-group ",i," ",plottitle))
+    
+    #calculate bayesian p-value for  proportion of  zeros
+    p2_dat <- ppc_stat_data(y=input_data$y[,i], 
+             yrep = post[,col_ind], 
+             stat = "prop_zero")
+    bayesian_p_prop_zero$p_value[i] <- mean((p2_dat %>% filter(variable=="y"))$value >= 
+                                            (p2_dat %>% filter(variable!="y"))$value)
+
+    # render figures in qmd    
+    print(p1)
+    print(p2)
+    
+    # save density plot
+    ggsave(paste0("Perch_figures/", plottitle, "_PPC_density_age_class",i,".png"),
+           plot=p1,
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+    
+    # save proportion of zeros PPC
+    ggsave(paste0("Perch_figures/", plottitle, "_PPC_prop_zeros_age_class",i,".png"),
+           plot=p2,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+    
+}
+
+ft_bayesian_p <- autofit(flextable(bayesian_p_prop_zero))
+save_as_docx(ft_bayesian_p, path=paste0("Perch_figures/", plottitle,"_bayesian_p_prop_zero.docx"))
+
+}
+
+visualize_pred_and_obs_per_age_class <- function(STAN_fit_summary, data_long, plottitle){
+
+# wong colour palette  
+pal <- set_wong_colours()  
+
+# Time series plot for different age-classes
+pred_and_obs_per_age_class <-
+data_long %>% 
+    group_by(year,age_class) %>% # first calculate summary statistic for observations
+    summarize(q5=quantile(n,probs=0.05,type=3), # 5 percent quantile
+              median=quantile(n,probs=0.5,type=3), # median
+              q95=quantile(n,probs=0.95,type=3)) %>% # 95 percent quantile
+    ungroup() %>%
+ggplot(.,aes(x=year-0.15, y=median, ymin=q5, ymax=q95)) + # plot median and quantiles for observations
+  geom_pointrange(color=pal[1],linetype="dashed") +
+  labs(
+  x = "Year",
+  y = expression(tilde(y) ~ "[a, t]")
+  ) +
+  ggtitle(plottitle) +  
+  geom_pointrange(data=STAN_fit_summary$N_obs,color=pal[2],aes(x=year+0.15, y=median, ymin=q5, ymax=q95)) + # plot predictions 
+  facet_wrap(vars(age_class),scales="free_y")
+
+# print figure in QMD-file
+print(pred_and_obs_per_age_class)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_pred_and_obs_per_age_class.png"),
+           plot=pred_and_obs_per_age_class,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+
+}
+
+visualize_expected_CPUE_per_age_class <- function(STAN_fit_summary, data_long, plottitle){
+  
+  # wong colour palette  
+pal <- set_wong_colours()  
+  
+  # Time series plot for different age-classes
+expected_CPUE_per_age_class <-
+data_long %>% 
+  group_by(year,age_class) %>% # first calculate summary statistic for observations
+  summarize(mean_CPUE=mean(n)) %>% # calculate mean cpue
+  ungroup() %>%
+  ggplot(.,aes(x=year, y=mean_CPUE)) + # plot median and quantiles for observations
+  geom_point(color="black") +
+  labs(
+    x = "Year",
+    y = expression(bold(N["a,t"]))
+  ) +
+  ggtitle(plottitle) +  
+  geom_line(data = STAN_fit_summary$N, aes(x = year, y = median), colour=pal[1]) +
+  geom_point(data = STAN_fit_summary$N, aes(x = year, y = median), colour=pal[1]) +
+  geom_ribbon(data = STAN_fit_summary$N,aes(x = year, y = median, ymin = q5, ymax = q95), alpha = 0.3, fill=pal[1]) +
+  facet_grid(vars(age_class),scales="free_y")
+
+
+# print figure in QMD-file
+print(expected_CPUE_per_age_class)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_expected_CPUE_per_age_class.png"),
+           plot=expected_CPUE_per_age_class,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+}  
+  
+visualize_cohorts <- function(STAN_fit_summary, data_long, plottitle){
+
+# set wong-colour palette
+  pal <- set_wong_colours()
+  
+# first calculate median values per cohort of raw data  
+median_per_year_and_year_class <-     
+data_long %>% 
+    group_by(year, year_class) %>% 
+    summarize(median=median(n)) %>% # calculate median per year and year-class(this is what´s being predicted by the model) 
+    ungroup() 
+
+nb_year_classes <- length(unique(data_long$year_class))
+
+# make a plot  
+cohort_plot <-
+  ggplot(STAN_fit_summary$N, aes(x=year, y=median, group=as.factor(year_class), colour=as.factor(year_class))) +
+  geom_point(data = median_per_year_and_year_class, aes(shape = as.factor(year_class))) +
+  geom_line(aes(linetype = as.factor(year_class))) +
+  scale_shape_manual(values = 1:nb_year_classes, name = "Observations(median)") +
+  scale_linetype_manual(values = 1:nb_year_classes, name = "Year-class predictions") +
+#  scale_color_manual(pal) +
+#  scale_color_viridis_d(option = "magma", name = "Year Classes",guide="none") +
+  labs(y = expression(tilde(y) ~ "[a, t] (Number of individuals caught per net-night)"),
+       title = plottitle) +
+  theme(
+      legend.position = "right", # Position legend on the right
+      legend.box = "vertical",  # Arrange legends vertically
+      legend.spacing.y = unit(0.1, "cm"), # Increase spacing between legend elements
+      legend.key.size = unit(0.75, "lines"),  # Reduce size of legend keys
+      legend.text = element_text(size = 8) # Reduce font size of legend text
+  ) +  
+  guides(
+      linetype = guide_legend(order = 1),
+      shape = guide_legend(order = 2)
+  )
+
+# print figure in QMD-file
+print(cohort_plot)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_cohort_plot.png"),
+           plot=cohort_plot,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+  }
+
+visualize_annual_mortality <- function(STAN_fit_summary, plottitle) {
+
+  # set wong-colours
+  pal <- set_wong_colours()
+  
+  annual_mortality <- 
+  ggplot(STAN_fit_summary$Z_mean, aes(x = year, y = median)) +
+  geom_line(colour=pal[1]) +
+  geom_point(colour=pal[1]) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.3, fill=pal[1]) +
+  labs(
+    x = "Year",
+    y = expression(bar(Z)[t]),
+    title = plottitle
+  ) 
+  
+  # print figure in QMD-file
+print(annual_mortality)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_annual_mortality.png"),
+           plot=annual_mortality,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+
+}
+
+visualize_age_class_annual_mortality <- function(STAN_fit_summary, plottitle) {
+
+  # set wong-colours
+  pal <- set_wong_colours()
+  
+age_class_annual_mortality <-  
+  ggplot(STAN_fit_summary$Z, aes(x = year, y = median)) +
+  geom_line(colour=pal[1]) +
+  geom_point(colour=pal[1]) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.3, fill=pal[1]) +
+  labs(
+    x = "Year",
+    y = expression(paste("Z"['a, t']," (Age-class mortality)")),
+    title = plottitle
+  ) +
+  facet_wrap(vars(age_class),scales="free_y")
+
+# print figure in QMD-file
+print(age_class_annual_mortality)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_age_class_annual_mortality.png"),
+           plot=age_class_annual_mortality,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+}
+
+make_mortality_table <- function(STAN_fit_summary, plottitle){
+data <- STAN_fit_summary$Z %>% 
+  select(variable, year, age_class, median, q5, q95) %>%  # select parameters to include in output
+  mutate(median=round(median,2), q5=round(q5,2), q95=round(q95,2)) # round values
+ft <- flextable(data)
+set_caption(ft,paste("Age-class mortality", plottitle))
+}
+
+make_mean_age_class_mortality_table <- function(STAN_fit_summary, plottitle){
+data <- STAN_fit_summary$Z_hat %>% 
+  bind_rows(STAN_fit_summary$Z_mean_tot) %>% # add mean total mortality
+  select(age_class, median, q5, q95) %>%  # select parameters to include in output
+  mutate(median=round(median,2), q5=round(q5,2), q95=round(q95,2)) %>% # round values
+  add_column(Area=plottitle,.before="age_class")
+ft <- flextable(data)
+set_caption(ft,paste("Mean age-class mortality", plottitle))
+}
+
+visualize_year_class_mortality <- function(STAN_fit_summary, plottitle) {
+ggplot(STAN_fit_summary$sA) +
+  geom_bar( aes(x = age_class, y = median), stat="identity", fill="red", alpha=0.7) +
+  geom_pointrange( aes(x = age_class, y = median, ymin = q5, ymax = q95), colour = "red") +
+  xlab("Age-class") +
+  ylab(expression(paste(Delta~a," (% difference to annual mortality)"))) +
+  ggtitle(plottitle)  
+}
+
+visualize_mean_age_class_mortality <- function(STAN_fit_summary, plottitle) {
+
+  # set wong-colour palette
+  pal <- set_wong_colours()
+  
+  mean_age_class_mortality <-
+  ggplot(STAN_fit_summary$Z_hat) +
+  geom_bar( aes(x = age_class, y = median), stat="identity", fill=pal[1], alpha=0.7) +
+  geom_pointrange( aes(x = age_class, y = median, ymin = q5, ymax = q95), colour = "black") +
+  xlab("Age-class") +
+  ylab(expression("Mean age-class mortality " * (bar(Z)[a]))) +
+  ggtitle(plottitle)  
+  
+  # print figure in QMD-file
+  print(mean_age_class_mortality)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_mean_age_class_mortality.png"),
+           plot=mean_age_class_mortality,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+}
+
+visualize_recruitment_index <- function(STAN_fit_summary, plottitle) {
+  
+  # set wong-colour palette
+  pal <- set_wong_colours()
+  
+  # Recruitment index
+  recruitment_index <- 
+  STAN_fit_summary$R %>%
+  filter(!is.na(rhat)) %>%  
+  ggplot(., aes(x = year, y = median)) +
+  geom_line(colour = pal[1]) +
+  geom_point(colour = pal[1]) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.3, fill= pal[1]) +
+  labs(
+    x = "Year",
+    y = expression(paste(R[year]," (Recruitment index)")),
+    title = plottitle
+  ) +
+  scale_y_log10()
+
+  # print figure in QMD-file
+  print(recruitment_index)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_recruitment_index.png"),
+           plot=recruitment_index,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+}
+
+# Time series plot for total stock size
+visualize_pred_and_obs_total_stock_size <- function(STAN_fit_summary, data_long, plottitle){
+
+# figure palette in wong colours  
+pal <- set_wong_colours()
+    
+# Time series plot for total stock size
+pred_and_obs_total_stock_size <-
+data_long %>% 
+    group_by(year,OBS_ID) %>% 
+    summarize(n=sum(n)) %>% 
+    ungroup() %>% 
+    group_by(year) %>% 
+    summarize(obs=mean(n)) %>%
+    ungroup() %>% 
+    ggplot(., aes(x=year, y=obs)) +
+    geom_point() +
+    geom_line(data = STAN_fit_summary$N_tot, aes(x = year, y = median), colour=pal[1]) +
+    geom_point(data = STAN_fit_summary$N_tot, aes(x = year, y = median), colour=pal[1]) +
+    geom_ribbon(data = STAN_fit_summary$N_tot,aes(x = year, y = median, ymin = q5, ymax = q95), alpha = 0.3, fill=pal[1]) +
+    labs(
+    x = "Year",
+    y = expression(paste(N[tot], " (Total stock size)")),
+    title = plottitle
+    )
+    
+# print figure in QMD-file
+print(pred_and_obs_total_stock_size)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_pred_and_obs_total_stock_size.png"),
+           plot=pred_and_obs_total_stock_size,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+
+}
+
+plot_stock_indicators <- function(STAN_fit_summary, data_long, plottitle){
+
+# set wong-colours
+pal <- set_wong_colours()
+
+tmin <- min(STAN_fit_summary$N_tot$year)
+tmax <- max(STAN_fit_summary$N_tot$year)
+
+# Time series plot for total stock size
+pred_and_obs_total_stock_size <-
+  data_long %>% 
+  group_by(year,OBS_ID) %>% 
+  summarize(n=sum(n)) %>% 
+  ungroup() %>% 
+  group_by(year) %>% 
+  summarize(obs=mean(n)) %>%
+  ungroup() %>% 
+  ggplot(., aes(x=year, y=obs)) +
+  geom_point() +
+  geom_line(data = STAN_fit_summary$N_tot, aes(x = year, y = median), colour=pal[1]) +
+  geom_point(data = STAN_fit_summary$N_tot, aes(x = year, y = median), colour=pal[1]) +
+  geom_ribbon(data = STAN_fit_summary$N_tot,aes(x = year, y = median, ymin = q5, ymax = q95), alpha = 0.3, fill=pal[1]) +
+  labs(
+    y = expression(bar(N)[t]),
+    title = plottitle
+  ) +
+  theme_bw() +
+  theme(
+      axis.text.x = element_blank(),
+      axis.title.x = element_blank(),
+      plot.margin = margin(0, 5, -5, 5) # Adjust margin to minimize space
+  ) +
+  annotate("text", x = -Inf, y = Inf, label = "(a)", size = 6, fontface = "bold", hjust = -0.1, vjust = 1.2) +
+  xlim(c(tmin,tmax))
+
+# Mortality
+annual_mortality <- 
+  ggplot(STAN_fit_summary$Z_mean, aes(x = year, y = median)) +
+  geom_line(colour=pal[2]) +
+  geom_point(colour=pal[2]) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.3, fill=pal[2]) +
+  labs(
+    x = "Year",
+    y = expression(bar(Z)[t]),
+  )+
+  theme_bw() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    plot.margin = margin(0, 5, -5, 5) # Adjust margin to minimize space
+  ) +
+  annotate("text", x = -Inf, y = Inf, label = "(b)", size = 6, fontface = "bold", hjust = -0.1, vjust = 1.2) +
+  xlim(c(tmin,tmax))
+
+# Recruitment index
+recruitment_index <- 
+  STAN_fit_summary$R %>%
+  filter(!is.na(rhat)) %>%  
+  ggplot(., aes(x = year, y = median)) +
+  geom_line(colour = pal[3]) +
+  geom_point(colour = pal[3]) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.3, fill= pal[3]) +
+  labs(
+    y = expression(hat(R)[t])
+  ) +
+  scale_y_log10() +
+  theme_bw() +
+  theme(
+    plot.margin = margin(0, 5, -5, 5) # Adjust margin to minimize space
+  )+
+  annotate("text", x = -Inf, y = Inf, label = "(c)", size = 6, fontface = "bold", hjust = -0.1, vjust = 1.2) +
+  xlim(c(tmin,tmax))
+
+
+
+
+stock_indicators <- pred_and_obs_total_stock_size/annual_mortality/recruitment_index
+
+# print figure in QMD-file
+print(stock_indicators)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_stock_indicators.png"),
+           plot=stock_indicators,
+           device="png",
+           width=14,
+           height=2*14*9/16,
+           units="cm",
+           dpi=300)
+
+}
+
+##################
+# Rearrange data #
+##################
+
+#------------------------------------------------#
+# Summarize data into age-groups and a plusgroup #
+#------------------------------------------------#
+# INPUTS
+# min_age - minimum age of fish recruiting to the gear
+# plus_age - The age above which few individuals reach
+# area - the area of interest
+# data - A tibble with columns areas, years and age-classes, and rows 
+#        representing the number of individuals caught per net-night.
+#
+# OUTPUT
+# dat - A tibble with similar structure as data, but old age-classes have been 
+#       summarized into one age-class representing number of individuals above
+#       a certain age caught per net-night, and only one area has been filtered 
+#       out.
+
+summarize_plusgroup <- function(min_age, plus_age, area, data) {
+
+if (sum(area %in% unique(data$Lokal))!=1){
+  print("Error: Lokal(area) not in your data")
+  return(NULL)
+}  
+  
+# find maximum age(columnname) in data  
+max_age <-  max(as.numeric(
+    grep("^\\d+$", names(data), value = TRUE)
+    ))
+
+# Ages of plus group
+pgroup <- as.character(c(plus_age:max_age))
+
+# Ages of age groups considered
+age_groups <- as.character(c(min_age:(plus_age-1)))  
+
+# sum across all ages above plusgroup age
+dat <- data %>%
+  filter(Lokal==area) %>% # filter one area
+  mutate(plusgroup=rowSums(across(matches(pgroup)))) %>% # sum across plusgroup ages
+  select(Lokal, År, OBS_ID, all_of(age_groups), plusgroup) %>% # select some of the variables
+  arrange(År) %>% # sort based on year
+  rename(year=År) # rename to year
+
+return(dat)
+}
+
+#--------------------------#
+# Long format for plotting #
+#--------------------------#
+#
+# Restructure data into long format for plotting
+#
+create_long_format <- function(data){
+  
+  # age groups
+  age_groups <- grep("^\\d+$", names(data), value = TRUE)
+  
+  # minimum age of plusgroup
+  plusage <- max(as.numeric(age_groups)) + 1
+  
+  # age of first age-class
+  N1_age <- min(as.numeric(age_groups))
+  
+  # columns to pivot
+  cols=c(age_groups,"plusgroup") # we also want data for plusgroup
+  
+  # pivot data
+  data_long <- data %>%
+    pivot_longer(cols = all_of(cols), names_to = "age_class", values_to = "n") %>%
+    mutate(year_class = case_when(age_class == "plusgroup" ~ year - plusage,
+                                  age_class != "plusgroup" ~ year - as.numeric(age_class))) 
+  
+  return(data_long)
+}
+
+#----------------------------------------------#
+# Create list with data for fitting STAN-model #
+#----------------------------------------------#
+#
+# Outputs a data list with variables used in the STAN model.
+#
+create_STAN_input_list <- function(data){
+  
+# number of age groups
+A <- length(grep("^\\d+$", names(data), value = TRUE)) + 1 # all numeric columnnames(age-classes) and the plus group
+
+# years in time series
+years <- min(data$year):max(data$year) # this includes also years with no data
+
+if(length(min(years):max(years))!=length(unique(data$year))){
+ print("Be aware that there are years with missing data in the data set!!")
+}
+
+# number of years in time series
+Y <- length(years)
+
+# indicator variable showing which time indicies have no data
+Y_missing <- as.integer(years %in% setdiff(years,unique(data$year)))
+
+# number of years with missing data
+n_missing <- sum(Y_missing)
+
+# Effort(i.e. number of net-nights) 
+E <- (data %>% group_by(year) %>% summarize(eff=n()))
+
+E <- E %>% complete(year=years) %>% 
+  mutate(eff=ifelse(is.na(eff),0,eff))
+
+E <- E$eff
+
+# number of caught individuals per net-night
+age_groups <- grep("^\\d+$", names(data), value = TRUE) # all numeric columns
+y <- data %>% select(all_of(age_groups),"plusgroup")
+
+# total number of observations
+n <- nrow(data)
+
+# initial age-group in data
+N1_age <- as.numeric(min(age_groups))
+
+# mean on log recruitment(number of individuals caught for the youngest age-class)
+mean_log_N1 <- data %>% 
+           group_by(year) %>% 
+           summarize(across(min(age_groups), mean, .names="init")) %>%
+           ungroup() %>%
+           select(init) %>%
+           filter(init!=0) %>%
+           summarize(mean_log_N1=mean(log(init)))
+
+mean_log_N1 <- mean_log_N1$mean_log_N1
+
+# prior mean for first year of observations
+Na1_init <- data %>%
+            filter(year==min(year)) %>%
+            select(-Lokal,-year,-OBS_ID) %>%
+            summarize_all(mean) %>% # mean at age for first year or data(if zero assign small value)
+            unlist()
+
+for(i in 1:length(Na1_init)){ # if some values zero set these to the mean value across the full data set
+if(Na1_init[i]==0){
+  Na1_init[i] <- mean(unlist(data[,names(Na1_init[i])]))
+}  
+}
+
+
+
+            
+STAN_input <- list(A=A, # number of age groups(including plusgroup)
+                   Y=Y, # total number of years
+                   Y_missing=Y_missing, # Indicator of years with missing data
+                   n_missing=n_missing, # number of years with missing data
+                   years=years, # years with data
+                   E=E, # total effort per year
+                   n=n, # total number of observations(i.e. net-nights)
+                   N1_age=N1_age, # the youngst age-class considered for modelling
+                   mean_log_N1=mean_log_N1, # mean number of individuals of the first age-class per net-night and year
+                   Na1_init=Na1_init, # mean number of individuals caught per net-night the first survey year
+                   y=as.matrix(y)) # number of individuals caught per age-class and net-night (ages-class in column and observation per row) 
+
+return(STAN_input)  
+}
+
+
+#----------------------------------------#
+# Generate initial values for STAN-model #
+#----------------------------------------#
+#
+# Outputs initial values, based on priors, for all parameters in model.
+#
+generate_inits_list <- function(data, chains = 4) {
+  inits_list <- vector("list", chains)
+  
+  for (i in seq_len(chains)) {
+    inits_list[[i]] <- list(
+      phi = rgamma(1, 2, 1),
+      mulogN1 = rnorm(1, data$mean_log_N1, 1),
+      sdlogN1 = abs(rcauchy(1, 0, 1)),
+      N1 = rlnorm(data$Y, data$mean_log_N1, 1),
+      Na1 = rlnorm(data$A, log(data$Na1_init), 1),
+      logZ1 = rnorm(data$A-1, log(0.2), 1),
+      phi_logZ_prior = rbeta(1, 2, 2),
+      sd_logZ = abs(rnorm(data$A-1, 0, 1)),
+      z_logZ = array(rnorm((data$A-1) * (data$Y - 1), 0, 1), dim = c(data$A - 1, data$Y - 1))
+    )
+  }
+  
+  return(inits_list)
+}
+
+#---------------------------#
+# Restructure STAN fit data #
+#---------------------------#
+restruct_STAN_fit <- function(fit, STAN_input_list){
+
+# Some variables from STAN_input_list that are needed
+A <- STAN_input_list$A 
+N1_age <- STAN_input_list$N1_age # initial age-class considered
+age_class <- names(STAN_input_list$Na1_init) #character
+year <- STAN_input_list$years
+Y <- STAN_input_list$Y
+plusage <- A + N1_age - 1
+
+# N - expected number of individuals per age-class
+N <- fit$summary("N") %>% 
+  mutate(age_class = factor(str_extract(variable, "(?<=\\[)[0-9]+"), 
+                              levels = 1:A,        # Extract row index
+                              labels = age_class), # Assign age_class to row index 
+    year = factor(str_extract(variable, "(?<=,)[0-9]+"), 
+                  levels = 1:Y,  # Extract column index
+                  labels = year)  # Assign years to column index
+  ) %>%
+  mutate(age_class=as.character(age_class), # change from factor to character
+         year=as.integer(as.character(year))) %>% # change from factor to character
+  mutate(year_class=case_when(age_class=="plusgroup" ~ year - plusage, # Assign year class
+                              age_class!="plusgroup" ~ year - as.numeric(age_class))) %>% 
+  relocate(year,year_class,age_class,.after=variable) # rearrange order of columns
+
+
+# N - estimate of number of individuals per age-class
+N_obs <- fit$summary("N_obs") %>% 
+  mutate(age_class = factor(str_extract(variable, "(?<=\\[)[0-9]+"), 
+                              levels = 1:A,        # Extract row index
+                              labels = age_class), # Assign age_class to row index 
+    year = factor(str_extract(variable, "(?<=,)[0-9]+"), 
+                  levels = 1:Y,  # Extract column index
+                  labels = year)  # Assign years to column index
+  ) %>%
+  mutate(age_class=as.character(age_class), # change from factor to character
+         year=as.integer(as.character(year))) %>% # change from factor to character
+  mutate(year_class=case_when(age_class=="plusgroup" ~ year - plusage, # Assign year class
+                              age_class!="plusgroup" ~ year - as.numeric(age_class))) %>% 
+  relocate(year,year_class,age_class,.after=variable) # rearrange order of columns
+
+# N_tot - number of individuals per year
+N_tot <- bind_cols(as.data.frame(year), fit$summary("N_tot")) %>%
+  relocate(year,.after=variable)
+
+# Recruitment indicies
+R <- bind_cols(as.data.frame(year), fit$summary("R")) %>%
+  relocate(year,.after=variable)
+
+# Annual mortality per age-class
+Z <- fit$summary("Z") %>% 
+  mutate(age_class = factor(str_extract(variable, "(?<=\\[)[0-9]+"), 
+                              levels = 1:A,        # Extract row index
+                              labels = age_class), # Assign age_class to row index 
+    year = factor(str_extract(variable, "(?<=,)[0-9]+"), 
+                  levels = 1:(Y-1),  # Extract column index
+                  labels = year[1:Y-1])  # Assign years to column index
+  ) %>%
+  mutate(age_class=as.character(age_class), # change from factor to character
+         year=as.integer(as.character(year))) %>% 
+  relocate(year,age_class,.after=variable) # rearrange order of columns
+
+# abundance-weighted arithmetic mean mortality
+Z_mean <- 
+  bind_cols(data.frame(year=year[1:Y-1]), fit$summary("Z_mean")) %>%
+  relocate(year,.after=variable)
+
+# Mean abundance-weighted arithmetic mean mortality across whole time series
+Z_mean_tot <- fit$summary("Z_mean_tot") %>%
+              add_column(age_class="Total") %>%
+              relocate(age_class, .after=variable)
+
+# Mean mortality per age-class
+Z_hat <-
+fit$summary("Z_hat") %>% mutate(age_class = factor(str_extract(variable, "(?<=\\[)[0-9]+"), 
+                                                   levels = 1:A,        # Extract row index
+                                                   labels = age_class)) %>%
+  mutate(age_class=as.character(age_class)) %>% 
+  relocate(age_class,.after=variable) # rearrange order of columns
+
+# 1-step_ahead forecast
+N_forecast <-
+fit$summary("N_forecast") %>% mutate(age_class = factor(str_extract(variable, "(?<=\\[)[0-9]+"), 
+                                                   levels = 1:A,        # Extract row index
+                                                   labels = age_class)) %>%
+  mutate(age_class=as.character(age_class),
+         year=as.integer(as.character(year[Y]))+1) %>% 
+  relocate(year, age_class,.after=variable) # rearrange order of columns
+
+# put all parameters in a list
+STAN_output <- list(N=N, # Expected number of individuals observed per age-class
+                    N_obs=N_obs, # Estimate of number of individuals observed per net-night
+                    N_tot = N_tot, # Estimated stock size (deterministic prediction)
+                    R=R, # Estimated recruitment for 0-year olds (Note!!! 0+ individuals in august)
+                    Z=Z, # Mortality per age-class
+                    Z_hat=Z_hat, # Mean mortality per age-class
+                    Z_mean=Z_mean, # mean mortality per year
+                    Z_mean_tot=Z_mean_tot, # mean mortality across whole time series
+                    N_forecast=N_forecast) # 1-step-ahead forecast of N  
+}
+
+
+do_retrospective_analysis <- function(model, data_wide, n_peels){
+
+# inits  
+retro_data_list <- list()
+m_year <- max(data_wide$year)
+
+# Peel data sets
+for(k in 0:n_peels){
+  STAN_input <- create_STAN_input_list(data_wide %>% filter(year<=(m_year-k))) # STAN_input list for one peel
+  retro_data_list[[paste0("peel_", k)]] <- STAN_input
+}
+
+# Fit models to peeled data sets
+fit_list <- list()
+for (i in 0:n_peels) {
+  data_i <- retro_data_list[[paste0("peel_", i)]]
+  fit_list[[paste0("peel_", i)]] <- model$sample( # fit model to peeled data set
+    data = data_i,
+    chains = 4,
+    parallel_chains = 4,
+    iter_sampling = 1000,
+    iter_warmup = 1000
+  )
+}
+
+# re-arrange fitted data(add years etc.)
+retr_data <- tibble() # a tibble with retrospective fits etc.
+for(i in 0:n_peels){
+# append predictions
+output <- restruct_STAN_fit(fit_list[[paste0("peel_", i)]], retro_data_list[[paste0("peel_", i)]])
+tmp <- bind_rows(output$N_forecast, output$N, output$Z) %>% # temporary tibble with estimates of N, forecasts and Z
+       add_column(peel=paste0("Peel",i)) # add a column defining the peel
+retr_data <- bind_rows(retr_data,tmp) # append tibble to a full output tibble
+}
+
+return(retr_data)
+}
+
+plot_peels_N <- function(retr_data, plottitle) {
+
+# set wong-colour palette
+pal <- set_wong_colours()
+
+retrospective_plot_N <-
+retr_data %>% 
+  filter(str_starts(variable,"N"),
+         !str_starts(variable,"N_for")) %>%
+ggplot(., aes(x=year,y=median,colour = peel)) +
+geom_line()+
+  ylab("N")+
+  ggtitle(plottitle) +
+  facet_wrap(~age_class,scales="free_y")
+
+# print retrostpective analysis in QMD-file
+print(retrospective_plot_N)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_retrospective_plot_N.png"),
+           plot=retrospective_plot_N,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+}
+
+plot_peels_Z <- function(retr_data, plottitle) {
+
+# set wong-colour palette
+pal <- set_wong_colours()
+    
+retrospective_plot_Z <- 
+retr_data %>% 
+  filter(str_starts(variable,"Z")) %>%
+  ggplot(., aes(x=year,y=median,colour = peel)) +
+  geom_line() +
+  scale_colour_manual(values = pal) +
+  ylab("Z")+
+  ggtitle(plottitle) +
+  facet_wrap(~age_class,scales="free_y")
+
+# print retrostpective analysis in QMD-file
+print(retrospective_plot_Z)
+
+# save plot
+ggsave(paste0("Perch_figures/", plottitle, "_retrospective_plot_Z.png"),
+           plot=retrospective_plot_Z,
+           device="png",
+           width=14,
+           height=14*9/16,
+           units="cm",
+           dpi=300)
+
+}
+
+calculate_Mohns_rho_Z <- function(retr_data,n_peels){
+
+  dat <- retr_data %>% 
+  filter(str_starts(variable,"Z"))
+age_class <- unique(dat$age_class)
+max_year <- max(dat$year,na.rm=TRUE)
+rho <- rep(0,length(age_class))
+
+for (i in 1:n_peels){
+  for (a in 1:length(age_class)){
+    x_full <-
+      dat %>%
+      filter(age_class==age_class[a],
+             year==max_year-i,
+             peel=="Peel0") %>%
+      select(median)
+    
+    x_retr <-
+      dat %>%
+      filter(age_class==age_class[a],
+             year==max_year-i,
+             peel==paste0("Peel",i)) %>%
+      select(median)
+    
+    # check for cases where retrospective data does not exist
+    if(is.numeric(x_retr$median) && length(x_retr$median) == 0){
+      rho[a]<- NA
+    } else{
+    rho[a] <- rho[a] + (x_retr$median - x_full$median)/x_full$median
+    }
+  }  
+}
+rho <- round(rho/n_peels,5)
+rho <- data.frame(age_class, rho)
+rho <- autofit(flextable(rho))
+save_as_docx(rho, path=paste0("Perch_figures/", plottitle,"_Mohns_rho_Z.docx"))
+return(rho)
+}
+
+calculate_Mohns_rho_N <- function(retr_data,n_peels){
+var <- "N" # which parameter to assess
+dat <- retr_data %>% 
+       filter(str_starts(variable,"N"),
+              !str_starts(variable,"N_for"))
+age_class <- unique(dat$age_class)
+max_year <- max(dat$year,na.rm=TRUE)
+rho <- rep(0,length(age_class))
+
+for (i in 1:n_peels){
+for (a in 1:length(age_class)){
+  x_full <-
+  dat %>%
+  filter(age_class==age_class[a],
+         year==max_year-i,
+         peel=="Peel0") %>%
+  select(median)
+  
+  x_retr <-
+  dat %>%
+  filter(age_class==age_class[a],
+         year==max_year-i,
+         peel==paste0("Peel",i)) %>%
+         select(median)
+  
+    # check for cases where retrospective data does not exist
+    if(is.numeric(x_retr$median) && length(x_retr$median) == 0){
+      rho[a]<- NA
+    } else{
+    rho[a] <- rho[a] + (x_retr$median - x_full$median)/x_full$median
+    }
+}  
+}
+rho <- round(rho/n_peels,5)
+rho <- data.frame(age_class, rho)
+rho <- autofit(flextable(rho))
+save_as_docx(rho, path=paste0("Perch_figures/", plottitle,"_Mohns_rho_N.docx"))
+return(rho)
+}
+
+calculate_prediction_accuracy <- function(data_long, retr_data) {
+
+MASE <- 
+data_long %>% 
+  group_by(year,age_class) %>% # first calculate summary statistic for observations
+  summarize(mean_CPUE=mean(n)) %>% # calculate mean cpue
+  ungroup() %>%
+  group_by(age_class) %>%
+  mutate(lag_diff=abs(mean_CPUE-lag(mean_CPUE))) %>% # calculate absolute value of difference between CPUE(t)-CPUE(t-1)
+  ungroup() %>%
+  left_join( # Join forecasts
+    retr_data %>% 
+    filter(str_starts(variable, "N_fore"),
+                      peel!="Peel0"), # we don´t want forecasts for the full model(there is nothing to compare to)
+    join_by(year,age_class)) %>%
+  mutate(err=ifelse(median==0, NA, abs(median-mean_CPUE))) %>% # absolute forecast errors
+  filter(str_starts(variable, "N_fore")) %>% # summarize only for cases with predictions
+  group_by(age_class) %>%
+  summarize(MASE=mean(err)/mean(lag_diff)) %>%
+  ungroup()
+
+MASE <- autofit(flextable(MASE))
+save_as_docx(MASE, path=paste0("Perch_figures/", plottitle,"_MASE.docx"))
+return(MASE)
+}
+
+# Colours to use
+set_wong_colours <- function(){
+pal <- c("#56B4E9", "#009E73", "#F0E442", "#0072B2", "#E69F00", "#D55E00", "Grey45", "Black")
+return(pal)
+}
+```
+
+# 5 Stock indicators
+
+In this section data is formatted for fitting the age-based model. Every area is analysed individually and for each area the following subsections are shown in this chapter:
+
+1.  Format data(for each area)
+    -   Wide format
+    -   Long format data
+    -   List with inputs for fitting STAN model
+2.  Fit model
+    -   In this section the model is fitted using STAN
+3.  Model diagnostics (this is slow so it is not rendered in the html)
+    -   This section test if parameters have converged and if there are any issues with divergent transitions etc.
+4.  Model fit
+    -   Here we display both simulated distributions and proportion of nets with zero individuals caught per age class.
+5.  [Stock indicators](#stock_indicators) Here a few figures are produced per area. The indicators are described in detail in the [introduction](#stock_indicators) and the following indicatros are produced for each area:
+    -   Predictions and observations for each age class (this figure shows medians and 5% and 95%-quantiles for both observations and model predictions\[prepresented at the observation scale\])
+    -   Predictions and observations of total abundance
+    -   Expected number of individuals per age-class and year plotted together with mean number of individuals caught in the nets.
+    -   Annual mortality rates(abundance weighted annual mortality rate).
+    -   Annual age-class specific mortality rates
+    -   Table of age-class specific mortality rates
+    -   Mean age-class mortality, i.e. the mean mortality across the whole time series for each age-class.
+    -   Table with mean age-class specific mortality rates.
+    -   Recruitment index, that is, the estimated number of 0+ individuals a given year.
+6.  [Retrospective analysis](#Retrospective_analysis)
+
+## 5.1 Råneå
+
+Add a description of the area
+
+### 5.1.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 2, 
+                    plus_age = 8, 
+                    area = "Råneå", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Råneå"
+```
+
+### 5.1.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta=0.95,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.1.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.1.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.1.4.1 Comment on model fit
+
+Fit seems to be ok. The model has converged(only 1 divergent transition out of 4000 iteration). Further, posterior predictive checks indicate that the model is predicting in-sample data reasonably, except for the age-class 4 where the model tend to overestimate the number of zeros in the data.
+
+### 5.1.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+#  plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+```
+
+### 5.1.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.1.7 Conclusions
+
+-   Time series showing number of individuals caught per age-class and year indicate that model gives a relatively good fit to data, with no clear observations of biased estimates.
+-   However, model fit to mean number of individuals caught per net-night is not super good.
+-   Mortality seems to be relatively low in this system with a peek in the early years of the time series and also a peek in 2014. Apart from those peeks mortality has fluctuated at a low level.
+-   The recruitment index indicates that the warm summer 2018 was associated with good recruitment.
+-   There appears as if mortality has decreased to some extent over the year, and especially so for the younger age-classes. Around 2012-2013 there was a mortality peak for age-classes 4-7. Mortality for the oldes age-classes seems to have been relatively stable. Total stock size has increased, and also a nice increase in the number of old individuals, corresponding to a relatively low mortality for all age-classes, ove time is observed.
+
+## 5.2 Kinnbäcksfjärden
+
+Add a description of the area
+
+### 5.2.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 3, 
+                    plus_age = 5, 
+                    area = "Kinnbäcksfjärden", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Kinnbäcksfjärden"
+```
+
+### 5.2.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.2.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.2.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.2.4.1 Comment on model fit
+
+The model has converged and there are a few divergent transitions(6 out of 4000 transitions). Posterior predictive checks indicate that the model is doing a good job for in-sample data (i.e. model simulations of the distribution of data points is similar to the observed distribution) for counts larger than zero, for all age-classes. It also reproduces the proportion of zeros in a very nice way.
+
+### 5.2.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.2.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.2.7 Conclusions
+
+-   A notable thing in this system is that peak catch at age is 3 year-olds, which is the highest peak-age across all areas considered(Why is this???).
+-   The model is reproducing mean total number of individuals caught at age 3+ in a very nice way.
+-   The model indicates that mortality for 3-year olds has increase over time.
+-   The recruitment index indicate that the very warm summer 2018 had a good recruitment, but the uncertainty is high.
+-   There is an indication that older individuals have a higher mortality rate than younger individuals(4-year-olds have a higher mortality rate than 3-year-olds).
+-   In general, annual mortality rate is high. The uncertainty in plusgroup mortality is very high.
+
+## 5.3 Holmön
+
+Add a description of the area
+
+### 5.3.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 6, 
+                    area = "Holmön", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Holmön"
+```
+
+### 5.3.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.3.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.3.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.3.4.1 Comment on model fit
+
+The model has converged and there are a few divergent transitions 27 out of 4000 transitions). Posterior predictive checks indicate that the model is doing a good job for in-sample data (i.e. model simulations of the distribution of data points is similar to the observed distribution) for counts larger than zero, for all age-classes. However, the model clearly underestimates the proportion of zeros for the youngest age-class, and slightly overestimatates the proportion of zero counts for age-groups 3-5.
+
+### 5.3.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+```
+
+### 5.3.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.3.7 Conclusions
+
+-   Estimates of total stock size is relatively well predicted by the model.
+-   Annual mortality rate has fluctuate to a large extent. However, during the most recent years annual mortality has been comparably low in comparison to earlier years for most age-classes.
+-   The model suggests that mortality rate increases with age in Holmön. Similar to other systems, mortality for the plusgroup is very uncertain, likely due to the low CPUE for this group.\
+-   The recruitment index indicates that recruitment has been fairly low during recent years. Still, total abundance is comparable to earlier years. Thus, the low mortality in conjunction with low recruitment in recent years suggest that this system, although showing a relatively stable total stock size may be fragile to any increased antrophogenic pressures.
+-   Note that there is no age-length data available for year 2016. In this example, it does not affect model output to a large extent..
+
+## 5.4 Norrbyn
+
+Add a detailed description of the area
+
+### 5.4.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 2, 
+                    plus_age = 4, 
+                    area = "Norrbyn", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Norrbyn"
+```
+
+### 5.4.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.4.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.4.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.4.4.1 Comment on model fit
+
+The model has converged, but there was one divergent transition during sampling. As this is a minimal number (1 out of 4000 transitions) we ignore this divergence and move forward. Posterior predictive checks indicate a very good fit to data, i.e. the model seems to simulate data in a representative manner. It also has a relatively high Bayesian R2 value.
+
+### 5.4.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+#  plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.4.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.4.7 Conclusions
+
+-   First of all it is worth mentioning that the model is reproducing the total stock size in a very representative and accurate manner. Credibility intervals for the predictions of mean stock size often cover mean stock sizes directly estimated from data.
+-   Annual mortality appears to fluctuate to a large extent, and display no trends whatsoever.
+-   Mortality rates appear to be higher for older individuals as compared to younger individuals.
+-   Recruitment appears to have been fluctuating to a large extent and no clear trends are observed.
+-   Note that no age-length data is available for years 2019-2020, giving rise to highly uncertain estimates of total stock size for years 2019-2020, highly uncertain estimates of recruitment for years 2017-2018 and highly uncertain estimates of mortality for years 2018-2019. In fact, all estimates at the end of the time series are very uncertain - as they should - given the lack of data.
+-   It is worth considering if we should use age-class 4 and above as the plusgroup for this area.
+
+## 5.5 Gaviksfjärden
+
+Add a detailed description of the area.
+
+### 5.5.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 2, 
+                    plus_age = 5, 
+                    area = "Gaviksfjärden", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Gaviksfjärden"
+```
+
+### 5.5.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.5.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.5.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.5.4.1 Comment on model fit
+
+The model has converged, but a relatively large number of divergent transitions were found (28 out of 4000 transitions). Posterior predictive checks indicate fairly good fit to data. There is an indication that the model simulates fewer zeros of the first age-group considered than what is observed in the data. For other age-groups the proportion of zeros produced by the model appears to be reasonable.
+
+### 5.5.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.5.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.5.7 Conclusions
+
+-   The model seems to reproduce the total stock size in a reasonable fasion. Most mean values of the observed data(12 of 14) lie within the 90% credibility intervals of mean total stock size predictions.
+-   The total stock size had a peak in 2014, but has otherwise been relatively stable over the years.
+-   The model suggests that stock size peak in 2014 was likely driven by strong recruitment pulse in 2012.
+-   Mortality has decreased over time for two-year-olds, showed no pattern ove time for three-year-olds, an has potentially incread to some extent for four-year-olds.
+-   For this area it seems like older individuals are more sensitive to mortality factors than younger individuals.
+
+## 5.6 Långvindsfjärden
+
+Add detailed description of the area.
+
+### 5.6.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 2, 
+                    plus_age = 7, 
+                    area = "Långvindsfjärden", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Långvindsfjärden"
+```
+
+### 5.6.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.6.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.6.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.6.4.1 Comment on model fit
+
+The model has converged and there were no divergent transitions observered. Posterior predictive checks seems ok, but the proportion of zeros for the first age-group is underestimated.
+
+### 5.6.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+#  plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.6.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.6.7 Conclusions
+
+-   The total stock size is not so well reproduced by the model. Many observations(Mean CPUE per year) lie outside credibility bounds.
+-   The large total stock size in the end of the time series is likely driven by a strong recruitment pulse during 2018, leading to a strong cohort with many young individiduals.
+-   Annual mortality appears to have been fluctuating to a large extent, and some years(e.g. 2004) mortality was very low, whereas other other years (e.g. 2018) its been quite high. It seems like the youngest age-classes are not so severely affected by different mortality factors, whereas an increasing trend in motality is observer for 4, 5, and 6-year-olds. The uncertainty in plusgroup mortality is very high
+-   Older individuals appear to be more strongly affected by mortality factors than young individuals. However, 6-year-olds is an exeption with a fairly low mortality.
+
+## 5.7 Forsmark
+
+Add detailed description of the area
+
+### 5.7.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 6, 
+                    area = "Forsmark", 
+                    data = join_age_per_obsid_effort)
+
+# Exclude the first two years of data for Forsmark(2002-2003). These are odd
+data_wide <- data_wide %>% filter(year>2003)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Forsmark"
+```
+
+### 5.7.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.7.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.7.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.7.4.1 Comment on model fit
+
+The model has converged and there is only one divergent transitions. The model underestimates the proportion of zeros in data for age-group 1 and overestimates the proportion of zeros for age-group 2.
+
+### 5.7.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.7.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.7.7 Conclusions
+
+-   Peak in catch-curve is not so easy to find. Peak may be at 1-year-olds or 2-year-olds.
+-   We exclude two years from the analysis 2002-2003. The data for year 2002 is very odd and almost no perch were caught. Also there is no age-length data from 2004-2006 giving a gap in the time series with no data. The analysis is therefore done on years 2007-2023.
+-   Total stock size is not super well represented by the model, with a decent number of observations not within the limits of model predictions. This disrepancy likely stems from the problem with 1 and 2-year-olds.
+-   It appears as if annual mortality has increased over the years, from a very low value in 2007 to very high value in 2022. This pattern is specifically pronounced for individuals of 3, 4 and 5-year olds, whereas young individuals, age-classes one and two, that is, appear to show no mortality pattern over time. The youngest age-classes also hwvelow mortality in general.
+-   The model suggests that old individuals have a higher mortality rate than young individuals, with plugproup being hard to assess due to the uncertainty in predictions.
+-   The model suggests that an increased mortality may have been counteracted by an increased recruitment in the area, summing up to a relatively stable total stock size dynamics with more young individuals in the stock.
+
+## 5.8 Lagnö
+
+Add a detailed description of the area
+
+### 5.8.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 5, 
+                    area = "Lagnö", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Lagnö"
+```
+
+### 5.8.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.8.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.8.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.8.4.1 Comment on model fit
+
+All paramers have converged and only one divergent transition was observed. There is no clear peak in the catch-curve for this area, but the highest mean cpue was observed for one-year-olds. The model clearly underestimates the proportion of zeros in the data for one-year-old and clearly overestimates the proportion of two-year-olds. Should a zero-inflated model be tested??
+
+### 5.8.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.8.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.8.7 Conclusions
+
+-   There are some very clear patterns in the stock indicators for this area.
+    -   Mortality has clearly increased over the years.
+    -   Recruitment(which is indirectly dependent on mortality estimates) has also increased.
+    -   The total stock size has remained relatively stable over the years.
+    -   Older individuals are clearly more strongly affected by mortality than younger individuals.
+-   What is quite clear for this area is that the stock is getting more and more dominated by young individuals.
+
+## 5.9 Asköfjärden
+
+Add a description of the area
+
+### 5.9.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 2, 
+                    plus_age = 5, 
+                    area = "Asköfjärden", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Asköfjärden"
+```
+
+### 5.9.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.9.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.9.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.9.4.1 Comment on model fit
+
+There are a few divergent transitions(8 out of 4000 transitions), but all parameters covergenced. Posterior predictive checks illustrate a fairly good fit to data. However, for the first age-group considered the model tend to underestimate the proportion of zeros. I don´t think this is a major issue here.
+
+### 5.9.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.9.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.9.7 Conclusion
+
+-   The model appears to fit the data very well.
+-   It is a clear and distinct break in this time series. Around year 2013 mortality abruptly increased, giving rise to relatively low total stock size. Moreover, at the same time the number of 3-year-olds, 4-year-olds and 5-year old individuals almost dissapeared from the stock.
+-   There is a definite problem of fitting this data set as there is almost no information to use in the fitting process as almost no indivuals of 3-year-olds and older indivduals are found in the data after year 2015. This leads to large uncertainties in mortality estimates.
+
+## 5.10 Kvädöfjärden
+
+Note tha K053 (Nätlänkar) instead of K064 (nordiska nät) have been used to collect data here!
+
+### 5.10.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 6, 
+                    area = "Kvädöfjärden", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Kvädöfjärden"
+```
+
+### 5.10.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.10.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.10.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.10.4.1 Comment on model fit
+
+There are no issues with divergent transitions or parameter convergence. Posterior predictive checks illustrate a fairly good fit to data. However, for the first age-groups considered the model tend to over- and under-estimate the proportion of zeros in data.
+
+### 5.10.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.10.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.10.7 Conclusion
+
+-   The model suggest relatively random fluctuations in total stock size.
+-   Mortality appears to decrease over time for one-year-olds, whereas no clear time patterns are observed for other age-classes.
+-   Overall the dynamics appears to be relatively stable, suggesting a relatively healthy stock
+
+## 5.11 Torhamn
+
+Add a description of the area
+
+### 5.11.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 3, 
+                    area = "Torhamn, Karlskrona Ö skärgård", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Torhamn"
+```
+
+### 5.11.2 Fit model
+
+```{r}
+#| include: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+### 5.11.3 Model diagnostics
+
+```{r}
+##| eval: FALSE # This needs to be run for each area
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose())
+
+```
+
+### 5.11.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.11.4.1 Comment on model fit
+
+Fit seems to be ok. The model has converged and there are no apparent issues with divergent transitions. Further, posterior predictive checks indicate that the model is doing a good job for in-sample data (i.e. model simulations of the distribution of data points is similar to the observed distribution). Note, however, that the model tends to underestimate the number times zero one-year-olds are caught in the nets. Nevertheless, this can be seen as minor issue given the overall nice fit and that there are no convergence issues. Hence, we move on and plot some nice figures.
+
+### 5.11.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+```
+
+### 5.11.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.11.7 Conclusions
+
+-   The model fit seems to be relatively good.
+-   Mortality rate has increased in Torhamn during the last couple of years(from appr. 2018 and onwards), which is reflected by the very low number of individuals at age 3 and above during the last couple of years.
+-   According to the model, in general mortality is higher for old as compared to young individuals in the stock.
+-   The recruitment index has had a few peeks during the last years, for which the year-class of the very varm summer 2018 stands out. During 2018 it appears as if it was a peek in recruitment, and a strong year-class was born.
+
+## 5.12 Plot mortality all areas
+
+```{r}
+# colours for plotting
+wong_colors <- c(
+  "#000000", "#E69F00", "#56B4E9", "#009E73",
+  "#F0E442", "#0072B2", "#D55E00", "#CC79A7",
+  "#999999", "#E69F00", "#56B4E9", "#009E73"
+)               
+
+
+Z_all_areas <- bind_rows(Z_Råneå,
+                         Z_Kinnbäcksfjärden,
+                         Z_Holmön,
+                         Z_Norrbyn,
+                         Z_Gaviksfjärden,
+                         Z_Långvindsfjärden,
+                         Z_Forsmark,
+                         Z_Lagnö,
+                         Z_Asköfjärden,
+                         Z_Kvädöfjärden,
+                         Z_Torhamn) %>%
+               filter(age_class!="plusgroup") %>%
+               mutate(
+                      Area_short = str_sub(Area, 1, 2),           # Extract first two letters
+                      Area_short = fct_inorder(Area_short)        # Ensure consistent factor order
+                     )
+
+# save table with mortalities for all areas
+write_csv(Z_all_areas, "Perch_figures/Z_all_areas.csv") 
+
+# number of areas
+n_areas <- length(unique(Z_all_areas$Area))
+
+#make plot
+plot_Z_all_areas <- ggplot(Z_all_areas,aes(y=median,ymin=q5,ymax=q95,x=Area_short,color=Area_short)) +
+  geom_pointrange() +
+  theme_bw()+
+  scale_colour_manual(values = wong_colors[1:n_areas]) +
+  ylab(expression(bar(Z)[a])) +
+  xlab("") + # remove x-label
+  theme(legend.position = "none") +  # This line removes the legen
+  facet_wrap(~age_class)
+
+# save figure
+ggsave(paste0("Perch_figures/plot_Z_all_areas.png"),
+           plot=plot_Z_all_areas,
+           device="png",
+           width=14,
+           height=2*14*9/16,
+           units="cm",
+           dpi=300)
+
+```
+
+# 6 Concluding remarks
+
+The analysis conducted in this report is part of a (FOMA) project aiming to test if it is possible to develop stock-assessment models for coastal fish using standardized gill-net data assembled by SLU-Aqua. The overall message is that it is indeed possible. Although improvements can be made in terms of modelling, the current project definitely shows that its possible to use data as is, i.e. use the number of fish being collected at each sampling occasion, rather than modeling means across a number of stations, for modelling purposes. Below follows some thoughts on differences among areas as well as a short discussion on potential future developments.
+
+## 6.1 General patterns across areas
+
+Here are some "general" patterns observed across all areas analysed in this document:
+
+1.  Mortality rates appear to be higher among old than young age-classes.
+2.  It appears that annual mortality has increased over time for the southern areas considered here(from the area Forsmark and south). This observation is clearly associated with a general age-truncation in these areas. There are now more young than old individuals in these areas. In fact, in some areas, e.g. Torhamn, there are only 1 and 2-year-olds in the stock.\
+3.  It seems like the very warm summer 2018 often has been associated with good recruitment. However, the models often also suggest that mortality during the census period august 2018 - august 2019 has relatively high.
+
+## 6.2 Future developments
+
+The stock-assesment model used here does not consider any sources of mortality, but rather estimate total mortality per age-class as a product of annual mortality and a multiplication factor saying how much more or less sensitive a given age-class is relative to the annual average mortality rate. This analysis revealed a number of interesting patterns, as for example that older individuals tend to have a higher mortality rate than younger individuals. However, in order to take this a step further it would be very interesting to see, and potentially also include, fishery catches in the analysis. Is it so that commercial, and to a larger extent recreational fisheries catches, is a large source of mortality for perch along the Swedish coast? Given that the areas considered in this analysis are regional reference areas, with a relatively low human impact, this may not be so interesting but worth considering anyway.
+
+Although the model used here can be used to make forecasts by for example assuming that recruitment and mortality is the same as last estimates in the time series, or by using mean values across for the full time series, some improvements may help making more accurate forecasts. One factor that would be very interesting to include is a parameter/function describing how spring temperature (that is temperature during spawning and juvenile development) affects recruitment. If such a function was included in the model it would be possible to project the development of cohorts using spring temperature as a proxy for recruitment. Annual mortality appears to follow an autoregressive time dependence and such a model could help projecting mortality, and hence, cohort dynamics into the future.
+
+# 7 Acknowledgements
+
+A big thanks to all persons at SLU-Aqua involved in collecting all the data used in this analysis. The data sets being collected have an amazing quality, and they both should and deserve be used even more than what they currently are. Thanks to Magnus Appelberg for discussions and kindly providing preliminary estimates on mortality using another approach.
