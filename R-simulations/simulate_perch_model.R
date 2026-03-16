@@ -15,6 +15,7 @@ simulate_perch_model <- function(sim_params){
   age_class_specific_mortality <- sim_params$age_class_specific_mortality # logical whether different mortality rates per age-class or mortality assumed to be the same for all age-classes
   logZ_mean <- sim_params$logZ_mean                           # Average logZ per age-class
   Z_CV <- sim_params$Z_CV                                     # CV of mortality on ordinary scale
+  trend_type <- sim_params$trend_type                         # type of signal in Z to be used. trend_type {"sinus", "logistic"}
   
 ################################################################################
 #------------------------- Simulate recruitment -------------------------------#
@@ -27,44 +28,57 @@ recruitment <- rlnorm(t_max, mu_log_recruitment, sd_log_recruitment)
 # Time vector
 t <- seq(2, t_max)
   
+# input
+sigma_log <- sqrt(log(1+Z_CV^2)) # convert to sigma on log-scale
+
+if(trend_type=="sinus") {
 # Sinus parameters
 A <- 0.5      # amplitude
 f <- 0.1      # frequency (cycles per time unit)
 phi <- runif(1, 0, 2*pi)   # random phase shift
+logZ_signal <-  A * sin(2 * pi * f * t + phi)
+} else if(trend_type=="logistic") {
+# logistic trend parameters  
+K <- 1
+r <- 0.5
+t_mid <- (t_max-1)/2
+logZ_signal <- K / (1 + exp(-r * (t - t_mid)))
+}
 
-# input
-sigma_log <- sqrt(log(1+Z_CV^2)) # convert to sigma on log-scale
 
 if(age_class_specific_mortality){
+
 # Sinusoidal curve
-logZ_sinus <- matrix(rep(A * sin(2 * pi * f * t + phi),each=n_age_classes-1), n_age_classes-1, t_max-1)
-logZ_sinus <- logZ_sinus - rowMeans(logZ_sinus) # center sinus curve
-signal_sd <- sd(logZ_sinus[1,])                 # sd for sinus signal
+logZ_tmp <- matrix(rep(logZ_signal,each=n_age_classes-1), n_age_classes-1, t_max-1)
+logZ_tmp <- logZ_tmp - rowMeans(logZ_tmp) # center sinus curve
+signal_sd <- sd(logZ_tmp[1,])                 # sd for sinus signal
 noise_sd <- signal_sd*noise_vs_sinus_signal     # scale noise applied to mortality in relation to sinus sd 
 logZ_noise <- matrix(rnorm((t_max-1)*(n_age_classes-1), sd = noise_sd), n_age_classes-1, t_max-1) # randomly draw noise
-logZ_sinus_noise <- logZ_noise + logZ_sinus     # add noise to sinus signal
-sd_mult_fact <-  sigma_log/apply(logZ_sinus_noise,1,sd) 
-logZ_sinus_noise_resc <- sweep(logZ_sinus_noise,1,sd_mult_fact,"*")
+logZ_signal_noise <- logZ_noise + logZ_tmp     # add noise to sinus signal
+sd_mult_fact <-  sigma_log/apply(logZ_signal_noise,1,sd) 
+logZ_signal_noise_resc <- sweep(logZ_signal_noise,1,sd_mult_fact,"*")
 logZ_mean <- matrix(logZ_mean[1:(n_age_classes-1)], n_age_classes-1, t_max-1)
-logZ <- logZ_mean + logZ_sinus_noise_resc  
+logZ <- logZ_mean + logZ_signal_noise_resc  
 logZ <- rbind(logZ,logZ[n_age_classes-1,])
 Z <- exp(logZ)
+
 } else {
-  # Sinusoidal curve
-  logZ_sinus <- matrix(rep(A * sin(2 * pi * f * t + phi),each=n_age_classes-1), n_age_classes-1, t_max-1)
-  logZ_sinus <- logZ_sinus - rowMeans(logZ_sinus) # center sinus curve
-  signal_sd <- sd(logZ_sinus[1,])                 # sd for sinus signal
+
+  logZ_tmp <- matrix(logZ_signal, n_age_classes-1, t_max-1,byrow=TRUE)
+  logZ_tmp <- logZ_tmp - rowMeans(logZ_tmp) # center sinus curve
+  signal_sd <- sd(logZ_tmp[1,])                 # sd for sinus signal
   noise_sd <- signal_sd*noise_vs_sinus_signal     # scale noise applied to mortality in relation to sinus sd 
   logZ_noise <- matrix(rep(rnorm((t_max-1), sd = noise_sd), each=n_age_classes-1),n_age_classes-1, t_max-1) # randomly draw noise
-  logZ_sinus_noise <- logZ_noise + logZ_sinus     # add noise to sinus signal
-  sd_mult_fact <-  sigma_log/apply(logZ_sinus_noise,1,sd) 
-  logZ_sinus_noise_resc <- sweep(logZ_sinus_noise,1,sd_mult_fact,"*")
+  logZ_signal_noise <- logZ_noise + logZ_tmp     # add noise to sinus signal
+  sd_mult_fact <-  sigma_log/apply(logZ_signal_noise,1,sd) 
+  logZ_signal_noise_resc <- sweep(logZ_signal_noise,1,sd_mult_fact,"*")
   logZ_mean <- matrix(logZ_mean, n_age_classes-1, t_max-1)
-  logZ <- logZ_mean + logZ_sinus_noise_resc  
+  logZ <- logZ_mean + logZ_signal_noise_resc  
   logZ <- rbind(logZ,logZ[n_age_classes-1,])
   Z <- exp(logZ)
   
-}
+} 
+
 ################################################################################
 #------------------- Simulate population dynamics -----------------------------#
 ################################################################################

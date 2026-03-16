@@ -61,7 +61,7 @@ Scenarios
 
 : Simulation scenarios {#tbl-sim}
 
-### 2.1.1 Scenario 1: 4 age-classes, mortality increases with age and 0.5 noise to signal
+### 2.1.1 Scenario 1: 4 age-classes, mortality increases with age, mortality stationary over time and 0.5 noise to signal
 
 #### 2.1.1.1 Set simulation parameters
 
@@ -81,11 +81,12 @@ age_class_specific_mortality = TRUE,                           # Logical whether
 logZ_mean = c(-2.3710604, -0.3879585,  0.4002884,  0.4002884),  # Mean Z on the log-scale
 Z_CV = c(1.02, 0.51, 0.124),                                    # CV of Z on ordinary scale
 noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "sinus"
 )
 ```
 
-
 #### 2.1.1.2 Simulate and fit model to example data
+
 ```{r}
 #| include: false
 
@@ -118,7 +119,7 @@ compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 #### 2.1.1.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: false
+#| eval: true
 
 n_rep <- 100
 Z <- tibble()
@@ -191,6 +192,7 @@ ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept
 ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
+
 #### 2.1.1.6 Bias in mean age-class mortality
 
 ```{r}
@@ -231,7 +233,7 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.2 Scenario 2: 4 age-classes, same mortality across age-classes and 0.5 noise to signal
+### 2.1.2 Scenario 2: 4 age-classes, same mortality across age-classes, mortality stationary over time and 0.5 noise to signal
 
 #### 2.1.2.1 Set simulation parameters
 
@@ -250,11 +252,12 @@ age_class_specific_mortality = FALSE,                           # # logical whet
 logZ_mean = c(-0.3),                                            # Mean Z on the log-scale
 Z_CV = c(0.43),                                                 # CV of Z on ordinary scale
 noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "sinus"
 )
 ```
 
-
 #### 2.1.2.2 Simulate and fit model to example data
+
 ```{r}
 #| include: false
 
@@ -287,7 +290,7 @@ compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 #### 2.1.2.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: false
+#| eval: true
 
 n_rep <- 100
 Z <- tibble()
@@ -295,6 +298,11 @@ Z <- tibble()
 # loop over all replicates
 for(i in c(1:n_rep)){
 
+
+success <- FALSE
+
+while (!success) {
+    
 # Simulate data
 sim <- simulate_perch_model(sim_params)
 
@@ -311,6 +319,14 @@ fit <- model$sample(
   refresh = 100
 )
 
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+
+}
 # Merge estimated(median of the posterior distribution) and simulated data
 Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
           add_column(Replicate=i,.before="Z_est") # add replicate number
@@ -401,7 +417,7 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.3 Scenario 3: 4 age-classes, mortality decreases with age and 0.5 noise to signal
+### 2.1.3 Scenario 3: 4 age-classes, mortality decreases with age, mortality stationary over time and 0.5 noise to signal
 
 #### 2.1.3.1 Set simulation parameters
 
@@ -419,12 +435,13 @@ n_gillnet_nights = 30,                                          # Number of gill
 age_class_specific_mortality = TRUE,                            # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
 logZ_mean = c(0.4002884, -0.3879585, -2.3710604, -2.3710604),   # Mean Z on the log-scale
 Z_CV = c(0.124, 0.51, 1.02),                                    # CV of Z on ordinary scale
-noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal 
+,trend_type = "sinus"
 )
 ```
 
-
 #### 2.1.3.2 Simulate and fit model to example data
+
 ```{r}
 #| include: false
 
@@ -457,7 +474,7 @@ compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 #### 2.1.3.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: false
+#| eval: true
 
 n_rep <- 100
 Z <- tibble()
@@ -465,6 +482,10 @@ Z <- tibble()
 # loop over all replicates
 for(i in c(1:n_rep)){
 
+success <- FALSE
+
+while (!success) {
+    
 # Simulate data
 sim <- simulate_perch_model(sim_params)
 
@@ -480,6 +501,14 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
 
 # Merge estimated(median of the posterior distribution) and simulated data
 Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
@@ -532,6 +561,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 ```
 
 #### 2.1.3.6 Bias in mean age-class mortality
+
 ```{r}
 ################################################################################
 #------------------------------ Mean mortality --------------------------------#
@@ -570,7 +600,7 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.4 Scenario 4 - 4 age-classes, mortality increases with age and 1 noise to signal
+### 2.1.4 Scenario 4 - 4 age-classes, mortality increases with age, mortality stationary over time and 1 noise to signal
 
 #### 2.1.4.1 Set simulation parameters
 
@@ -589,11 +619,12 @@ age_class_specific_mortality = TRUE,                           # Logical whether
 logZ_mean = c(-2.3710604, -0.3879585,  0.4002884,  0.4002884),  # Mean Z on the log-scale
 Z_CV = c(1.02, 0.51, 0.124),                                    # CV of Z on ordinary scale
 noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "sinus"
 )
 ```
 
-
 #### 2.1.4.2 Simulate and fit model to example data
+
 ```{r}
 #| include: false
 
@@ -626,7 +657,7 @@ compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 #### 2.1.4.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: false
+#| eval: true
 
 n_rep <- 100
 Z <- tibble()
@@ -634,6 +665,11 @@ Z <- tibble()
 # loop over all replicates
 for(i in c(1:n_rep)){
 
+
+success <- FALSE
+
+while (!success) {  
+  
 # Simulate data
 sim <- simulate_perch_model(sim_params)
 
@@ -649,6 +685,15 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
 
 # Merge estimated(median of the posterior distribution) and simulated data
 Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
@@ -699,6 +744,7 @@ ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept
 ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
+
 #### 2.1.4.6 Bias in mean age-class mortality
 
 ```{r}
@@ -739,7 +785,7 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.5 Scenario 5: 4 age-classes, same mortality across age and 1 noise to signal
+### 2.1.5 Scenario 5: 4 age-classes, same mortality across age, mortality stationary over time and 1 noise to signal
 
 #### 2.1.5.1 Set simulation parameters
 
@@ -757,12 +803,13 @@ n_gillnet_nights = 30,                                          # Number of gill
 age_class_specific_mortality = FALSE,                           # # logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
 logZ_mean = c(-0.3),                                            # Mean Z on the log-scale
 Z_CV = c(0.43),                                                 # CV of Z on ordinary scale
-noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal   
+,trend_type = "sinus"
 )
 ```
 
-
 #### 2.1.5.2 Simulate and fit model to example data
+
 ```{r}
 #| include: false
 
@@ -795,7 +842,7 @@ compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 #### 2.1.5.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: false
+#| eval: true
 
 n_rep <- 100
 Z <- tibble()
@@ -803,6 +850,11 @@ Z <- tibble()
 # loop over all replicates
 for(i in c(1:n_rep)){
 
+
+success <- FALSE
+
+while (!success) {    
+  
 # Simulate data
 sim <- simulate_perch_model(sim_params)
 
@@ -818,6 +870,15 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
 
 # Merge estimated(median of the posterior distribution) and simulated data
 Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
@@ -909,7 +970,7 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.6 Scenario 6: 4 age-classes, mortality decreases with age and 1 noise to signal
+### 2.1.6 Scenario 6: 4 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
 
 #### 2.1.6.1 Set simulation parameters
 
@@ -927,12 +988,13 @@ n_gillnet_nights = 30,                                          # Number of gill
 age_class_specific_mortality = TRUE,                            # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
 logZ_mean = c(0.4002884, -0.3879585, -2.3710604, -2.3710604),   # Mean Z on the log-scale
 Z_CV = c(0.124, 0.51, 1.02),                                    # CV of Z on ordinary scale
-noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal
+,trend_type = "sinus"
 )
 ```
 
-
 #### 2.1.6.2 Simulate and fit model to example data
+
 ```{r}
 #| include: false
 
@@ -965,7 +1027,7 @@ compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 #### 2.1.6.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: false
+#| eval: true
 
 n_rep <- 100
 Z <- tibble()
@@ -973,6 +1035,10 @@ Z <- tibble()
 # loop over all replicates
 for(i in c(1:n_rep)){
 
+success <- FALSE
+
+while (!success) {      
+  
 # Simulate data
 sim <- simulate_perch_model(sim_params)
 
@@ -988,6 +1054,14 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
 
 # Merge estimated(median of the posterior distribution) and simulated data
 Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
@@ -1040,6 +1114,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 ```
 
 #### 2.1.6.6 Bias in mean age-class mortality
+
 ```{r}
 ################################################################################
 #------------------------------ Mean mortality --------------------------------#
@@ -1078,24 +1153,3263 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
+### 2.1.7 Scenario 7 - 7 age-classes, mortality increases with age, mortality stationary over time and 0.5 noise to signal
 
-### 2.1.7 Scenario 7 - 7 age-classes, mortality increases with age and 0.5 noise to signal
+#### 2.1.7.1 Set simulation parameters
 
-### 2.1.8 Scenario 8 - 7 age-classes, same mortality across age and 0.5 noise to signal
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.7261684, -1.2659422, -1.5737547, -1.2047981, -0.5548759, -0.2927341, -0.2927341),  # Mean Z on the log-scale
+Z_CV = c(2.07, 1.27, 1.09, 0.596, 0.319, 0.0283),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal    
+,trend_type = "sinus"
+)
+```
 
-### 2.1.9 Scenario 9 - 7 age-classes, mortality decreases with age and 1 noise to signal
+#### 2.1.7.2 Simulate and fit model to example data
 
-### 2.1.10 Scenario 10 - 7 age-classes, mortality increases with age and 1 noise to signal
+```{r}
+#| include: false
 
-### 2.1.11 Scenario 11 - 7 age-classes, same mortality across age and 1 noise to signal
+# simulate data
+sim <- simulate_perch_model(sim_params)              
 
-### 2.1.12 Scenario 12 - 7 age-classes, mortality decreases with age and 1 noise to signal
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.1.7.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.1.7.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario7.rds")
+
+```
+
+#### 2.1.7.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario7.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.1.7.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.1.8 Scenario 8 - 7 age-classes, same mortality across age, mortality stationary over time and 0.5 noise to signal
+
+#### 2.1.8.1 Set simulation parameters
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                         # Number of gillnet-nights per year
+age_class_specific_mortality = FALSE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.24),                                            # Mean Z on the log-scale
+Z_CV = c(0.61),   
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal
+,trend_type = "sinus"
+)
+```
+
+#### 2.1.8.2 Simulate and fit model to example data
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.1.8.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.1.8.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario8.rds")
+
+```
+
+#### 2.1.8.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario8.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.1.8.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.1.9 Scenario 9 - 7 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
 
 
+#### 2.1.9.1 Set simulation parameters
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-0.2927341, -0.5548759, -1.2047981, -1.5737547, -1.2659422, -1.7261684, -1.7261684),  # Mean Z on the log-scale
+Z_CV = c(0.0283, 0.319, 0.596, 1.09, 1.27, 2.07),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "sinus"
+)
+```
+
+#### 2.1.9.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.1.9.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.1.9.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario9.rds")
+
+```
+
+#### 2.1.9.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario9.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.1.9.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.1.10 Scenario 7 - 7 age-classes, mortality increases with age, mortality stationary over time and 1 noise to signal
+
+#### 2.1.10.1 Set simulation parameters
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.7261684, -1.2659422, -1.5737547, -1.2047981, -0.5548759, -0.2927341, -0.2927341),  # Mean Z on the log-scale
+Z_CV = c(2.07, 1.27, 1.09, 0.596, 0.319, 0.0283),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "sinus"
+)
+```
+
+#### 2.1.10.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.1.10.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.1.10.4 Simulate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario10.rds")
+
+```
+
+#### 2.1.10.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario10.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.1.10.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.1.11 Scenario 11 - 7 age-classes, same mortality across age, mortality stationary over time and 1 noise to signal
+
+#### 2.1.11.1 Set simulation parameters
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                         # Number of gillnet-nights per year
+age_class_specific_mortality = FALSE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.24),                                            # Mean Z on the log-scale
+Z_CV = c(0.61),   
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "sinus"
+)
+```
+
+#### 2.1.11.2 Simulate and fit model to example data
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.1.11.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.1.11.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario11.rds")
+
+```
+
+#### 2.1.11.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario11.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.1.11.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.1.12 Scenario 12 - 7 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
+
+#### 2.1.12.1 Set simulation parameters
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-0.2927341, -0.5548759, -1.2047981, -1.5737547, -1.2659422, -1.7261684, -1.7261684),  # Mean Z on the log-scale
+Z_CV = c(0.0283, 0.319, 0.596, 1.09, 1.27, 2.07),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "sinus"
+)
+```
+
+#### 2.1.12.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.1.12.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.1.12.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario12.rds")
+
+```
+
+#### 2.1.12.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario12.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.1.12.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+```
+
+## 2.2 Increasing mortality
+
+### 2.2.1 Scenario 13: 4 age-classes, mortality increases with age, mortality increases over time and 0.5 noise to signal
+
+#### 2.2.1.1 Set simulation parameters
+
+Here we define parameters based on scenario 1 in @tbl-sim.
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 0.662,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 1.22,                                      # SD of recruitment on log-scale
+n_age_classes = 4,                                              # Number of age-classes in the model
+logSD = c(0.8, 0.5, 0.2),                                       # SD on the log scale of mortality variability 
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(3.2800550, 1.2601100, 0.6301085, 1.0629100),         # Abundance at initial time step for each age-class
+NBphi = 1.388495,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-2.3710604, -0.3879585,  0.4002884,  0.4002884),  # Mean Z on the log-scale
+Z_CV = c(1.02, 0.51, 0.124),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.1.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.1.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.1.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario13.rds")
+
+```
+
+#### 2.2.1.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario13.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.1.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.2 Scenario 14: 4 age-classes, same mortality across age-classes and 0.5 noise to signal
+
+#### 2.2.2.1 Set simulation parameters
+
+Here we define parameters based on scenario 1 in @tbl-sim.
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 0.662,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 1.22,                                      # SD of recruitment on log-scale
+n_age_classes = 4,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(3.2800550, 1.2601100, 0.6301085, 1.0629100),         # Abundance at initial time step for each age-class
+NBphi = 1.388495,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = FALSE,                           # # logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-0.3),                                            # Mean Z on the log-scale
+Z_CV = c(0.43),                                                 # CV of Z on ordinary scale
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.2.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.2.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.2.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
 
 
-## 2.2 Regime shift mortality
+success <- FALSE
 
-### 2.3 Increasing mortality over time
+while (!success) {
+    
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+
+}
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario14.rds")
+
+```
+
+#### 2.2.2.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario14.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.2.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.3 Scenario 15: 4 age-classes, mortality decreases with age, mortality increases over time and 0.5 noise to signal
+
+#### 2.2.3.1 Set simulation parameters
+
+Here we define parameters based on scenario 1 in @tbl-sim.
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 0.662,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 1.22,                                      # SD of recruitment on log-scale
+n_age_classes = 4,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(3.2800550, 1.2601100, 0.6301085, 1.0629100),         # Abundance at initial time step for each age-class
+NBphi = 1.388495,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                            # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(0.4002884, -0.3879585, -2.3710604, -2.3710604),   # Mean Z on the log-scale
+Z_CV = c(0.124, 0.51, 1.02),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal 
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.3.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.3.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.3.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {
+    
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario15.rds")
+
+```
+
+#### 2.2.3.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario15.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.3.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.4 Scenario 16 - 4 age-classes, mortality increases with age, mortality increases over time and 1 noise to signal
+
+#### 2.2.4.1 Set simulation parameters
+
+Here we define parameters based on scenario 1 in @tbl-sim.
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 0.662,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 1.22,                                      # SD of recruitment on log-scale
+n_age_classes = 4,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(3.2800550, 1.2601100, 0.6301085, 1.0629100),         # Abundance at initial time step for each age-class
+NBphi = 1.388495,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-2.3710604, -0.3879585,  0.4002884,  0.4002884),  # Mean Z on the log-scale
+Z_CV = c(1.02, 0.51, 0.124),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.4.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.4.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.4.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+
+success <- FALSE
+
+while (!success) {  
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario16.rds")
+
+```
+
+#### 2.2.4.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario16.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.4.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.5 Scenario 17: 4 age-classes, same mortality across age, mortality increases over time and 1 noise to signal
+
+#### 2.2.5.1 Set simulation parameters
+
+Here we define parameters based on scenario 1 in @tbl-sim.
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 0.662,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 1.22,                                      # SD of recruitment on log-scale
+n_age_classes = 4,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(3.2800550, 1.2601100, 0.6301085, 1.0629100),         # Abundance at initial time step for each age-class
+NBphi = 1.388495,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = FALSE,                           # # logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-0.3),                                            # Mean Z on the log-scale
+Z_CV = c(0.43),                                                 # CV of Z on ordinary scale
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal   
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.5.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.5.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.5.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+
+success <- FALSE
+
+while (!success) {    
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario17.rds")
+
+```
+
+#### 2.2.5.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario17.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.5.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.6 Scenario 18: 4 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
+
+#### 2.2.6.1 Set simulation parameters
+
+Here we define parameters based on scenario 1 in @tbl-sim.
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 0.662,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 1.22,                                      # SD of recruitment on log-scale
+n_age_classes = 4,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(3.2800550, 1.2601100, 0.6301085, 1.0629100),         # Abundance at initial time step for each age-class
+NBphi = 1.388495,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                            # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(0.4002884, -0.3879585, -2.3710604, -2.3710604),   # Mean Z on the log-scale
+Z_CV = c(0.124, 0.51, 1.02),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.6.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.6.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.6.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario18.rds")
+
+```
+
+#### 2.2.6.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario18.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.6.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.7 Scenario 19 - 7 age-classes, mortality increases with age, mortality increases over time and 0.5 noise to signal
+
+#### 2.2.7.1 Set simulation parameters
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.7261684, -1.2659422, -1.5737547, -1.2047981, -0.5548759, -0.2927341, -0.2927341),  # Mean Z on the log-scale
+Z_CV = c(2.07, 1.27, 1.09, 0.596, 0.319, 0.0283),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal    
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.7.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.7.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.7.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario19.rds")
+
+```
+
+#### 2.2.7.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario19.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.7.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.8 Scenario 20 - 7 age-classes, same mortality across age, mortality increases over time and 0.5 noise to signal
+
+#### 2.2.8.1 Set simulation parameters
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                         # Number of gillnet-nights per year
+age_class_specific_mortality = FALSE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.24),                                            # Mean Z on the log-scale
+Z_CV = c(0.61),   
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.8.2 Simulate and fit model to example data
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.8.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.8.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario20.rds")
+
+```
+
+#### 2.2.8.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario20.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.8.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.9 Scenario 21 - 7 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
+
+
+#### 2.2.9.1 Set simulation parameters
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-0.2927341, -0.5548759, -1.2047981, -1.5737547, -1.2659422, -1.7261684, -1.7261684),  # Mean Z on the log-scale
+Z_CV = c(0.0283, 0.319, 0.596, 1.09, 1.27, 2.07),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 0.5                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.9.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.9.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.9.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario21.rds")
+
+```
+
+#### 2.2.9.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario21.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.9.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.10 Scenario 22 - 7 age-classes, mortality increases with age, mortality increases over time and 1 noise to signal
+
+#### 2.2.10.1 Set simulation parameters
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.7261684, -1.2659422, -1.5737547, -1.2047981, -0.5548759, -0.2927341, -0.2927341),  # Mean Z on the log-scale
+Z_CV = c(2.07, 1.27, 1.09, 0.596, 0.319, 0.0283),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.10.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.10.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.10.4 Simulate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario22.rds")
+
+```
+
+#### 2.2.10.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario22.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.10.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.11 Scenario 23 - 7 age-classes, same mortality across age, mortality increases over time and 1 noise to signal
+
+#### 2.2.11.1 Set simulation parameters
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                         # Number of gillnet-nights per year
+age_class_specific_mortality = FALSE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-1.24),                                            # Mean Z on the log-scale
+Z_CV = c(0.61),   
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.11.2 Simulate and fit model to example data
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.11.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.11.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario23.rds")
+
+```
+
+#### 2.2.11.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario23.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.11.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+
+```
+
+### 2.2.12 Scenario 24 - 7 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
+
+#### 2.2.12.1 Set simulation parameters
+
+```{r}
+sim_params <- list(
+mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
+sd_log_recruitment = 0.60,                                      # SD of recruitment on log-scale
+n_age_classes = 7,                                              # Number of age-classes in the model
+t_max = 20,                                                     # Number of time steps to simulate
+N_init = c(4.70189500, 7.76934500, 9.50462500, 1.42273000, 0.19977400, 0.09031005, 0.20990450),         # Abundance at initial time step for each age-class
+NBphi = 2.69573,                                               # Dispersion parameter of negative binomial
+n_gillnet_nights = 30,                                          # Number of gillnet-nights per year
+age_class_specific_mortality = TRUE,                           # Logical whether different mortality rates per age-class(TRUE) or mortality assumed to be the same for all age-classes(FALSE)
+logZ_mean = c(-0.2927341, -0.5548759, -1.2047981, -1.5737547, -1.2659422, -1.7261684, -1.7261684),  # Mean Z on the log-scale
+Z_CV = c(0.0283, 0.319, 0.596, 1.09, 1.27, 2.07),                                    # CV of Z on ordinary scale
+noise_vs_sinus_signal = 1                                     # How large should noise (normal)be in comparison to sinusoidal signal     
+,trend_type = "logistic"
+)
+```
+
+#### 2.2.12.2 Simulate and fit model to example data
+
+```{r}
+#| include: false
+
+# simulate data
+sim <- simulate_perch_model(sim_params)              
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+```
+
+#### 2.2.12.3 Comparison between simulated and estimated mortality rates
+
+```{r}
+compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
+```
+
+#### 2.2.12.4 Simualate data for bias assessment (Obs slow!!!)
+
+```{r}
+#| eval: true
+
+n_rep <- 100
+Z <- tibble()
+
+# loop over all replicates
+for(i in c(1:n_rep)){
+
+success <- FALSE
+
+while (!success) {      
+  
+# Simulate data
+sim <- simulate_perch_model(sim_params)
+
+# Fit model to simulated data
+fit <- model$sample(
+  data = sim$STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(sim$STAN_input,chains=4),
+  adapt_delta=0.8,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# Merge estimated(median of the posterior distribution) and simulated data
+Z_repl <- extract_Z_estimates_and_simulated_true_parameters(fit, sim$Z) %>%
+          add_column(Replicate=i,.before="Z_est") # add replicate number
+
+# Append results from single replicate to larger data.frame
+Z <- bind_rows(Z, Z_repl)
+
+print(i)
+}
+
+# save data for later use
+saveRDS(Z, file="../Data/Simulations/Scenario24.rds")
+
+```
+
+#### 2.2.12.5 Bias in timevarying mortality
+
+```{r}
+# load mortality data
+Z <- readRDS("../Data/Simulations/Scenario24.rds")
+
+################################################################################
+#------------------------- Time varying mortality -----------------------------#
+################################################################################
+Z_time <- Z %>% filter(Z_type=="time_varying")
+
+# True vs. Estimated values
+ggplot(Z_time, aes(x = Z_true, y = Z_est)) + geom_point() + geom_abline(intercept=0, slope=1) + labs(x=expression("Observed " (theta)), y=expression("Estimated " (hat(theta)))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Violin plot of bias
+ggplot(Z_time, aes(x=age_class, y = bias)) + geom_violin() + labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) + theme_bw() 
+
+# Histogram of bias
+ggplot(Z_time, aes(x=bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + 
+  labs(x = expression("Bias " (hat(theta) - theta))) + facet_wrap(~age_class) + theme_bw()
+
+# Violin plot relative bias
+ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expression("Relative bias " (hat(theta) - theta) / theta), x = "Age class") + theme_bw()
+
+# Histogram of relative bias
+ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
+
+# Observed vs bias
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+# Observed vs relative bias
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+
+```
+
+#### 2.2.12.6 Bias in mean age-class mortality
+
+```{r}
+################################################################################
+#------------------------------ Mean mortality --------------------------------#
+################################################################################
+Z_mean <- Z %>% filter(Z_type=="mean_mortality")
+
+Z_mean %>% 
+  pivot_longer(cols=c(Z_est,Z_true), names_to = "obs_or_est", values_to = "Z") %>%
+ggplot(., aes(y=Z, x=obs_or_est, fill=obs_or_est)) + 
+  labs(x = "Observed and estimated Z", y = "Z") +
+  geom_violin() +
+  stat_summary(
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    linewidth = 0.4
+  ) +
+  theme_bw() + 
+  facet_wrap(~age_class, scales="free")
+
+ggplot(Z_mean, aes(y=bias, x=age_class)) + 
+  labs(x = "Age class", y = expression("Bias " (hat(theta) - theta))) +
+  geom_boxplot() +
+  geom_hline(yintercept=0, colour="red") +
+  theme_bw()
+
+ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
+  geom_bar(position="fill") +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "grey80"),
+    labels = c("TRUE" = "Yes", "FALSE" = "No"),
+    name = "CI covers true value"
+  ) +
+  labs(x="Age class", 
+       y="Proportion cases CI includes or not includes true value")
+```
+
 
 # 3. Effect of data subsetting on
