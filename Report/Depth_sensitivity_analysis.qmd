@@ -1,0 +1,718 @@
+---
+title: "Sensitivity_depth_analysis"
+author: "Torbjörn Säterberg"
+date: today  
+format: html
+embed-resources: true
+self-contained: true
+editor: visual
+code-fold: true
+error: FALSE
+warning: FALSE
+message: FALSE
+toc: true
+toc-depth: 3
+lang: sv  
+---
+
+# 1. Introduction
+This script is used as a sensitivity analysis of the effect of depth on mortality in the Säterberg et al. 2026 perch model paper. 
+
+
+-   As there are indications that large perch tend to in habituate shallow waters to a larger extent than what smaller perch do ([Bergström et al. 2016](https://www.sciencedirect.com/science/article/pii/S0272771416304899%5D)) we subset the data based on water depth at which gill-nets are set and redo the analysis using various data subsets. The analysis is conducted in order to test whether the age-mortality pattern observed among coastal perch populations persist when only shallow sites are used as data source. If the same pattern, that is, an increasing mortality with age, is observed for shallow as well as deep areas it indicates that the population is relatively well sampled.
+
+## 1.1 Required R-packages {#R-packages}
+
+```{r}
+#| label: load-packages
+require("RPostgres", quietly = TRUE) # postgres functionality in R
+library(DBI) # For database connection
+library(odbc) # Connection between R and relation database management systems
+library(ggforce, quietly=TRUE)  # added functionality to ggplot
+library(tidybayes) # working with posterior draws for bayesian models
+library(flextable) # plotting nice tables
+library(brms) # multilevel models in a bayesian context(similar to lmer)
+library(bayesplot) # plotting bayesian models
+library(future) # parallell computing 
+library(purrr) # working with functions in pipe
+library(modelr) # modeling functions with pipe
+library(tidyverse) # tidyverse functionality for working with data
+library(cmdstanr) # fitting stan models through R
+library(patchwork) # combining multiple ggplots
+```
+
+
+## 1.2 Connect to KUL-database {#dbconnection}
+
+```{r}
+# Connect to Aqua-datalagret
+AQ_con <- dbConnect(odbc(), 
+                         Driver = "SQL Server", 
+                         Server = "aquadw_prod.db.slu.se",
+                         USER = Sys.info()["user"], 
+                         Database = "AquaDW_prod", 
+                         Trusted_Connection = "TRUE", 
+                         encoding = "UTF-8")
+```
+
+# 2. Load data
+
+Here we load data from the KUL data base. Data is extracted from three different views(tables) that are needed in the assessment model. For perch we are only interested in gill-net nights that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m depth. The tables we use are the following:
+
+-   KUL_OBSERVATION_NEW
+    -   This table includes information on effort.
+-   KUL_LANGDGRUPP
+    -   This table includes the number of individuals caught per length class
+-   KUL_INDIVID_NEW
+    -   This table includes data on disected individuals(length and age measurements of females)
+-   KUL_STICKPROVSUTFALL
+    -   This table includes information on number of females/males in the sample. This information is needed in order to find the number of females in the stocks.
+
+We load data using a direct read-only database connection to SLU datalagret and are only interested in K064 data series(Nordiska kustöversiktsnät). We load data from the following test fishing areas:
+
+-   Torhamn
+-   Holmön
+-   Forsmark
+-   Långvindsfjärden
+-   Norrbyn
+-   Kinnbäcksfjärden
+-   Gaviksfjärden
+-   Lagnö
+-   Råneå
+-   Asköfjärden
+-   Kvädöfjärden
+-   Finbo (Åland)
+-   Kumlinge (Åland)
+-   Askrikefjärden (Vaxholm)
+
+## 2.1 Load effort data {#effordata}
+
+Here we load and summarize effort data from the KUL table "KUL_OBSERVATION_NEW". For perch we are only interested in gill-net nights that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m depth.
+
+```{sql, connection="AQ_con", output.var = "effort"}
+-- CALCULATE EFFORT
+SELECT Lokal, Fångstområde, År, FISKE_ID, OBS_ID, DJUPSTRATUM AS Djupstratum
+FROM AquaDW_prod.mart.KUL_OBSERVATION_NEW
+WHERE 
+Redskap_kod = 'K064' 
+AND 
+Störning='NEJ'
+AND 
+Godkänd ='JA'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND 
+STRATIFIERING NOT IN ('Djupstratum(0-10-20-30): 10-20 m', -- remove data from deepest strata
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m'); 
+```
+
+## 2.2 Load Catch data {#catchdata}
+
+Here we load catch data for length groups. For perch we are only interested in gill-nets that are undisturbed (störing=NEJ), approved (Godkänd=JA) and are sampled at 0-10 m.
+
+```{sql, connection="AQ_con", output.var = "Kul_data"}
+SELECT *
+FROM AquaDW_prod.mart.KUL_LANGDGRUPP klmt --
+WHERE 
+Redskap_kod = 'K064' 
+AND
+Art = 'Abborre' 
+AND
+Godkänd='JA'
+AND 
+Störning='NEJ'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND
+Stratifiering NOT IN ('Djupstratum(0-10-20-30): 10-20 m',
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m')
+```
+
+## 2.3 Load individual data {#inddata}
+
+Here we load individual data. Length and age of individual fish.
+
+```{sql, connection="AQ_con", output.var = "Kul_ind"}
+SELECT * 
+FROM
+AquaDW_prod.mart.KUL_INDIVID_NEW
+WHERE
+Art = 'Abborre'
+AND 
+FISKE_ID IN
+(SELECT DISTINCT FISKE_ID
+FROM AquaDW_prod.mart.KUL_LANGDGRUPP klmt --
+WHERE 
+Redskap_kod = 'K064' 
+AND
+Art = 'Abborre' 
+AND
+Godkänd='JA'
+AND 
+Störning='NEJ'
+AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
+AND 
+Fångstområde <> 'Långvindsfjärden reservat'
+AND
+Stratifiering NOT IN ('Djupstratum(0-10-20-30): 10-20 m',
+'Djupstratum: 10-20 m', 
+'Djupstratum: >20 m')
+)
+OR -- In Kvädöfjärden individuals are sampled using nätlänkar some years and nordiska nät other years.
+FISKE_ID IN 
+(SELECT DISTINCT FISKE_ID
+FROM
+AquaDW_prod.mart.KUL_INDIVIDPROV
+WHERE
+Art = 'Abborre'
+AND 
+Lokal_ID IN(54) 
+AND 
+Fiske IN('Nordiska nät augusti', 'Nätlänk augusti'));
+```
+
+## 2.4 Load sex data {#sexdata}
+
+Here we load information on proportion of males and females in subsamples of the data.
+
+```{sql, connection="AQ_con", output.var = "Kul_sex"}
+SELECT Lokal, Fiskeår, Längdgrupp, ANTAL_HANAR, ANTAL_HONOR, ANTAL
+FROM AquaDW_prod.mart.KUL_STICKPROVSUTFALL ks
+WHERE
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+AND 
+Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti');
+```
+
+# 3 Transform data {#transformdata}
+
+Here we transform and analyse data. Age-length keys are derived, proportion of females in the samples are calculated, data is subsetted into age-classes.
+
+## 3.1 Remove NAs from individual and catch data sets {#filterdata}
+
+```{r}
+Kul_data <- Kul_data %>% 
+            filter(!is.na(Längdgrupp),!is.na(Antal)) %>% # remove cases with no length info
+            uncount(Antal, .remove = FALSE) # expand df such that each row is one individual
+
+Kul_ind <- Kul_ind %>% 
+           filter(!is.na(Slutlängd_cm),!is.na(Ålder)) # we cant use NAs
+```
+
+## 3.2 Estimate age based indices using ALK
+
+In this section we:
+
+1.  [Derive age-length keys](#ALKs)([ALK](#ALK-function)) using [age-read individuals](#inddata)
+2.  [Estimate age of individual fish](#estfishage) using [ALKs](#ALKs) and the [full data set with fish lengths](#catchdata).
+3.  [Summarize catches per age class](#fishperlengthclass)
+4.  [Restructure the summarized catches (3) per age into cohorts](#cohort).
+
+### 3.2.1 ALK function {#ALK-function}
+
+This function is used for deriving age-length keys for data subsets. It takes as input the observed lengths in [the total catch](#catchdata) (*lengthD*) and [age and length data](#inddata) from a subsample of the total catch to derive an age-length key (i.e. the probability of age given length). This is sometimes called a forward age-length key [(Ailloud & Hoenig 2019 ICES J Sci)](https://academic.oup.com/icesjms/article/76/6/1515/5480389).
+
+```{r}
+applyALK <- function(lengthD,indD){
+
+# Find number of individuals per length and age in individual data
+LADat <- xtabs(~Slutlängd_cm + Ålder, data=indD) # number of observations per age- and length-class 
+ind_lidx <- sort(unique(indD$Slutlängd_cm)) # length groups in individual data
+L_lidx <- sort(unique(lengthD$Längdgrupp)) # Length groups in length data
+
+# initialize Length/age group matrix which will be fille later
+l_agr_mat <- matrix(NA,length(L_lidx),dim(LADat)[2])
+rownames(l_agr_mat) <- L_lidx 
+colnames(l_agr_mat) <- colnames(LADat)
+l_agr_mat[L_lidx %in% ind_lidx,] <- LADat[rownames(l_agr_mat)[L_lidx %in% ind_lidx],]
+rowidNA <- as.numeric(rownames(l_agr_mat)[apply(l_agr_mat, 1, anyNA)]) # columns to fill with data
+
+# Fill in values for length groups with no individual data (borrow age data from lower or higher length-classes)
+for(i in rowidNA){
+  if(i<min(ind_lidx)){
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- LADat[as.character(min(ind_lidx)),] # take the smallest length group from ind data if Length observations are smaller than individual data
+  } else if (i>max(ind_lidx)) {
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- LADat[as.character(max(ind_lidx)),] # take age dist from the largest length group from ind data if Length observations are larger than individual data 
+  }else{    
+  # take the sum of age distributions for closest length groups if length group is not part of individual data 
+  l_agr_mat[rownames(l_agr_mat)==as.character(i),] <- colSums(LADat[c(as.character(min(ind_lidx[ind_lidx>i])), 
+                                                          as.character(max(ind_lidx[ind_lidx<i]))),])
+  }
+  }
+
+# convert from number of ind per age- and length class to proportion of age-classes per length-class in sample.
+ALK <- prop.table(l_agr_mat,margin=1)
+return(ALK)
+}
+```
+
+### 3.2.2 Derive ALKs for each subset of data (FISKE_ID) {#ALKs}
+
+Age-length keys are here derived for each subset of data(FISKE_ID) using data of [indivual age-read and length measured fish](#inddata) in combination with the [full data set](#catchdata). The full data set is only used to give information on the number of length-classes needed in the age-length keys.
+
+```{r}
+
+# Apply function to grouped dataframes
+ALK_all <- Kul_data %>%
+  group_by(Lokal, År) %>% # Group length data from full sample using FISKE_ID
+  nest() %>%  
+  inner_join( # Append individual data to full length sample data set group wise
+    Kul_ind %>%
+      group_by(Lokal, År) %>%
+      nest(),
+    by = c("Lokal","År")
+  ) %>%
+  mutate(
+    ALK = purrr::map2(data.x, data.y, applyALK) # derive ALK for each subset of data
+  ) %>%
+    ungroup() %>%
+  select(-data.x, -data.y)
+```
+
+### 3.2.3 Estimate age of individual fish {#estfishage}
+
+Here we use ALK and the full data set, subsetted by FISKE_ID, to estimate age of individual fish in the full length data set.
+
+```{r}
+# For reproducibility set seed
+set.seed(123)
+
+# sample individual age across all individuals (assuming only females in the sample)
+ind_age <- Kul_data %>%
+  group_by(Lokal,Djupstratum, År) %>%
+  nest() %>%
+  inner_join(
+    ALK_all %>%
+      group_by(Lokal,År),
+    by = c("Lokal","År")
+  ) %>%
+  mutate(
+    ind_age = map2(data, ALK, function(x,y) {FSA::alkIndivAge(y,~ Längdgrupp,data=x)$age})
+  ) %>%
+  unnest(c(ind_age, data)) %>% 
+  ungroup() %>%
+  select(Lokal, Djupstratum, År, OBS_ID, Längdgrupp, ind_age)
+
+```
+
+## 3.3 Assign sex to individuals
+
+1.  First we calculate the [proportion of females](#female_prop_area) per area from annual sub-samples.
+2.  Second, we [randomly assign sex to individuals](#assignsex) based on the calculated proportion of females per area and length group.
+
+### 3.3.1 Proportion females per area (i.e. aggregate data across years for each area) {#female_prop_area}
+
+Here we aggregate data across years in order to calculate the proportion of females per length group and area.
+
+```{r}
+
+# female proportions per area and year
+female_prop_Y <- Kul_sex %>% 
+  mutate(females = case_when(ANTAL_HANAR==ANTAL ~ 0, # Number of males equal to total -> 0 females
+                             !is.na(ANTAL_HONOR) ~ ANTAL_HONOR, # Number of females reported
+                             .default = NA),
+         total = case_when(!is.na(ANTAL) ~ ANTAL, # Total sample reported
+                           (is.na(ANTAL)) & 
+                           (!is.na(ANTAL_HANAR) & !is.na(ANTAL_HONOR)) 
+                           ~ ANTAL_HANAR+ANTAL_HONOR,# Females and males reported -> prop can be calculated
+                           .default=NA),
+         female_prop=females/total # proportion females in size class from sample
+                                  )
+
+# femle proportions per area
+female_prop_area <- 
+  female_prop_Y %>% 
+  filter(!if_any(c("females","total"),is.na)) %>% # remove cases where either females or the total number individuals in samples is na
+  group_by(Lokal, Längdgrupp) %>%
+  summarize(total = sum(total), 
+            females = sum(females),
+            prop_females = sum(females)/sum(total)) %>%
+  ungroup()
+
+```
+
+
+### 3.3.2 Randomly assign sex to indivuals {#assignsex}
+
+Here we randomly assign sex to individuals using a bernoulli model:
+
+$$
+X_{ijkl} \sim \text{Bern}(p_{jk})
+$$
+
+where $X_{ijk}$ is a binary random variable and ($p_{jk}$) is the probability that an individual perch in area *j* and age class *k* is a female. $p_{jk}$ is estimated ($\hat{p}_{jk}$) using [sex proportions](#female_prop_area) observed in samples of [sex](#sexdata).
+
+```{r}
+# for reproducibility set seed
+set.seed(123)
+
+# join sex probabilities to individual data
+ind_sex <- ind_age %>%
+  left_join(female_prop_area,by=c("Lokal","Längdgrupp"))
+
+# randomly sample sex based on sex probabilities per length group
+ind_sex$isfemale <- rbinom(n=nrow(ind_sex),size=1,p=ind_sex$prop_females)
+
+# The previous line produces a few na:s for age groups that do not occur in the sex data. For these lines assign females to large individuals
+ind_sex$isfemale[is.na(ind_sex$isfemale) & (ind_sex$Längdgrupp>30)] <- 1
+
+# for small ones randomly sample sex based on 50-50 chance of male-female
+ind_sex$isfemale[is.na(ind_sex$isfemale)] <- rbinom(n=sum(is.na(ind_sex$isfemale)),size=1,p=0.5) 
+  
+```
+
+### 3.2.4 Summarize number of fish per age-class {#fishperageclass}
+
+```{r}
+age_per_obsid <- ind_sex %>%
+  filter(!(År <= 2004 & Lokal=="Forsmark")) %>%  # remove odd years with data for forsmark
+  group_by(Lokal, Djupstratum, År, OBS_ID, ind_age) %>% 
+  summarize(N=sum(isfemale)) %>% # number of females per age and net
+  ungroup() %>%
+  complete(ind_age, nesting(OBS_ID, Djupstratum), fill=list(N=0)) %>%
+  group_by(OBS_ID) %>% 
+  mutate(Lokal=if_else(is.na(Lokal),unique(Lokal[!is.na(Lokal)])[1],Lokal),
+         År=if_else(is.na(År),unique(År[!is.na(År)])[1],År)) %>%
+  ungroup()
+```
+
+```{r}
+
+# re-arrange effort data
+effort_ind <- effort %>% filter(FISKE_ID %in% unique(Kul_data$FISKE_ID)) # only include cases where FISKE_ID is included in individual data
+
+join_age_per_obsid_effort <- age_per_obsid %>% 
+                             right_join(effort_ind,by=c("Lokal","År","OBS_ID","Djupstratum")) %>%  # we want to keep all net-night observations
+                             complete(ind_age, nesting(OBS_ID, Djupstratum), fill=list(N=0)) %>% # include also zero catches(i.e. nets with no perch)
+                             group_by(OBS_ID) %>% 
+                             mutate(Lokal=if_else(is.na(Lokal),unique(Lokal[!is.na(Lokal)])[1],Lokal)) %>%#,
+                        #            År=if_else(is.na(År),unique(År[!is.na(År)])[1],År)) %>%
+                             ungroup() %>% 
+                             filter(!is.na(ind_age),!is.na(År)) %>% # we don´t want na:s produced by joining
+                             pivot_wider(id_cols=c(Lokal, Djupstratum, År, OBS_ID),names_from=ind_age,values_from=N)
+
+```
+
+### 3.2.5 Define minimum age and plus-group for each area
+```{r}
+ages_in_model <- 
+join_age_per_obsid_effort %>%
+  group_by(Lokal) %>%
+  summarize(across(`1`:`10`, ~mean(.x, na.rm = TRUE))) %>%
+  ungroup() %>%
+  pivot_longer(cols=`1`:`10`,names_to = "age_class", values_to = "CPUE") %>%
+  mutate(is_plus_group=CPUE<0.2) %>%
+  group_by(Lokal) %>%
+  summarize(plus_age=min(as.numeric(age_class)[is_plus_group])-1,
+            min_age=age_class[which.max(CPUE)])
+
+```
+
+## 3.3 Define scenarios to run
+```{r}
+
+combinations <- join_age_per_obsid_effort %>%
+                distinct(Lokal, Djupstratum) %>%
+                right_join(ages_in_model, by=join_by("Lokal"))
+
+```
+
+# 4. Run analyses
+
+## 4.1 Compile model
+```{r}
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+```
+
+## 4.2 Fit all models
+```{r}
+#| eval: false
+
+for(c(i:nrow(combinations))) {
+  
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = combinations$min_age[i], 
+                    plus_age = combinations$plus_age[i], 
+                    area = combinations$Lokal[i], 
+                    Depth_strata = combinations$Djupstratum[i],
+                    data = join_age_per_obsid_effort)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+success <- FALSE
+
+while (!success) {
+    
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta=0.95,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+    # check if chains ran
+    if (length(fit$output_files()) != 0) {
+      success <- TRUE
+    } else {
+      message(paste("Retrying model", i))
+    }
+}
+
+# save MCMC data
+saveRDS(STAN_input, 
+        paste0("../MCMCOutput/Sensitivity_analysis/",
+                       "inputdata_",
+                       combinations$Lokal[i],
+                       "_",
+                       combinations$Djupstratum[i],
+                       ".RDS"))
+        
+fit$save_object(paste0("../MCMCOutput/Sensitivity_analysis/",
+                       "fit_",
+                       combinations$Lokal[i],
+                       "_",
+                       combinations$Djupstratum[i],
+                       ".RDS"))
+
+}
+```
+
+## 4.3 Load fitted data
+```{r}
+sensitivity_models_all_files <- list.files("../MCMCOutput/Sensitivity_analysis/",full.names="TRUE") # paths to saved files
+sensitivity_models_fit_files <- grep("fit_", sensitivity_models_all_files, value = TRUE) # paths to mcmc summary files
+sensitivity_models_inputdata_files <- grep("inputdata_", sensitivity_models_all_files, value = TRUE) # paths to input data files
+baseline_models_all_files <- list.files("../MCMCOutput/",pattern=".RDS$",full.names="TRUE") # paths to saved files
+baseline_models_fit_files <- grep("fit_", baseline_models_all_files, value = TRUE) # paths to saved files
+baseline_models_inputdata_files <- grep("inputdata_", baseline_models_all_files, value = TRUE) # paths to saved files
+
+sensitivity_model_fits <- vector("list",length(sensitivity_models_fit_files))
+baseline_model_fits <- vector("list", length(baseline_models_fit_files))
+
+for(i in c(1:length(sensitivity_models_fit_files))) {
+  fit <- readRDS(sensitivity_models_fit_files[i])
+  input <- readRDS(sensitivity_models_inputdata_files[i])
+  fit_summary <- restruct_STAN_fit(fit, input)
+  Lokal <- sub(".*fit_([^_]+)_.*", "\\1", sensitivity_models_fit_files[i])
+  Depth_stratum <- sub(".*_([^_]+)\\.RDS$", "\\1", sensitivity_models_fit_files[i])
+  
+  
+  sensitivity_model_fits[[i]] <- list(Area=Lokal, 
+                              Depth_stratum=Depth_stratum, 
+                              fit = fit_summary, 
+                              input = input)
+}
+
+  for(i in c(1:length(baseline_models_fit_files))){
+  fit <- readRDS(baseline_models_fit_files[i])
+  input <- readRDS(baseline_models_inputdata_files[i])
+  fit_summary <- restruct_STAN_fit(fit, input)
+  Lokal <- sub("fit_(.*)\\d{4}-\\d{2}-\\d{2}.*", "\\1", basename(baseline_models_fit_files[i]))
+  baseline_model_fits[[i]] <- list(Area = Lokal,
+                               Depth_stratum = "All Depths",
+                               fit = fit_summary,
+                               input = input) 
+   }
+
+
+# convert to tibble with first two columns representing scenarios
+sensitivity_model_fits <- map_dfr(sensitivity_model_fits, ~ tibble(
+  Area = .x$Area,
+  Depth_stratum = .x$Depth_stratum,
+  fit = list(.x$fit),
+  input = list(.x$input)
+)) %>% # rename a few areas
+  mutate(Area=case_when(Area=="Finbo, Åland" ~ "Finbo",
+                        Area=="Kumlinge, Åland" ~ "Kumlinge",
+                        Area=="Torhamn, Karlskrona Ö skärgård" ~ "Torhamn",
+                        .default = Area))
+
+#
+baseline_model_fits <- map_dfr(baseline_model_fits, ~ tibble(
+  Area = .x$Area,
+  Depth_stratum = .x$Depth_stratum,
+  fit = list(.x$fit),
+  input = list(.x$input)
+))
+
+all_model_fits <- bind_rows(sensitivity_model_fits, baseline_model_fits)
+
+```
+
+## 4.4 Plot figures
+```{r}
+
+```
+
+```{r}
+# extract the data needed
+Plot_data_Z_hat <- all_model_fits %>% #all_model_fits %>%
+  mutate(selected = map(fit, "Z_hat")) %>%  # extract sublist
+  unnest(selected) %>%
+  filter(age_class!="plusgroup")
+
+Plot_data_Z <- all_model_fits %>%
+  mutate(selected = map(fit, "Z")) %>%  # extract sublist
+  unnest(selected) %>%
+  filter(age_class!="plusgroup")
+
+Plot_data_Z_mean <- all_model_fits %>%
+  mutate(selected = map(fit, "Z_mean")) %>%  # extract sublist
+  unnest(selected) 
+
+  # set wong-colour palette
+  pal <- set_wong_colours()
+  
+# create figure  
+  mean_age_class_mortality <-
+  ggplot(Plot_data_Z_hat, aes(x = age_class, y = median, fill = Depth_stratum, group=Depth_stratum,colour=Depth_stratum)) +
+  geom_col(position=position_dodge(width=0.8), width=0.7) +
+  geom_smooth(method="lm", se=FALSE) +  
+    #  geom_bar(stat="identity", fill=Depth_stratum, position = "dodge") +
+  #geom_pointrange(aes(x = age_class, y = median, ymin = q5, ymax = q95), colour = "black") +
+    scale_fill_manual(values = pal) +
+    scale_colour_manual(values = pal) +
+    facet_wrap(~Area, scales="free_y") +
+    theme_bw()
+
+  
+# Creat a list of areas  
+Areas <- unique(all_model_fits$Area)
+
+# Function for plotting age-class mortality per area
+age_class_mortality_per_depth <- function(Plot_data_Z, Area_name) {  
+  ggplot(Plot_data_Z %>% filter(Area==Area_name), aes(x = year, y = median, color = Depth_stratum)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Year",
+    y = expression(paste("Z"['a, t']," (Age-class mortality)")),
+    title = Area_name
+  ) +
+  scale_color_manual(values = pal) +
+  facet_wrap(vars(age_class),scales="free_y") +
+  theme_bw()  
+}
+
+# loop over all areas and plot mortality per-age class and depth
+for (i in 1:length(Areas)) {
+  print(age_class_mortality_per_depth(Plot_data_Z, Areas[i]))
+}
+
+  ggplot(Plot_data_Z_mean, aes(x = year, y = median, color=Depth_stratum)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Year",
+    y = expression(paste("Z"['a, t']," (mean mortality)"))
+  ) +
+  scale_color_manual(values = pal) +
+  facet_wrap(vars(Area),scales="free_y") +
+  theme_bw()  
+
+}
+```
+
+
+## 4.1 Råneå
+
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Råneå for a detailed description of the data collection  
+
+
+### 5.1.2 Fit model
+
+```{r}
+#| eval: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta=0.95,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Råneå", Sys.Date(),".RDS"))
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Råneå",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
+```
+
+
+
+### 5.1.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+#  plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Råneå <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Råneå <- extract_recruitment_estimates(fit_summary, plottitle)
+
+```
+

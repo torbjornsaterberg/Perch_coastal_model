@@ -160,6 +160,7 @@ generated quantities{
   vector<lower=0> [Y] N_tot_obs; // Simulated observed total annual stock size 
   vector<lower=0> [Y] N_tot; // Simulated total annual stock size (deterministic process only)
   matrix[A, Y] N; // abundance at age and year
+  matrix[A, Y] rel_N; // relative distribution of annual abundance per age-class
   array[n, A] int<lower=0> yrep; // simulated data for each observation
   array[n, A] real log_lik;
   vector [Y-1] Z_mean; // average annual mortality 
@@ -167,6 +168,15 @@ generated quantities{
   vector [A] Z_hat; // mean mortality per age-class
   vector [A] Z_forecast; // 1-step-ahead forecast of mortality 
   vector [A] N_forecast; // 1-step-ahead forecast of Cohorts
+  // ASCETS output
+  // real <lower=0> median_A;   // median abundance in assessment period
+  // real <lower=0> q5_A;       // 5th percential of abundance in assessment period
+  // real <lower=0> q95_A;      // 95th percential of abundance in assessment period
+  // real <lower=0> q98_B;      // 98th percential of abundance in baseline period
+  // real <lower=0> q5_B;       // 5th percential of abundance in baseline period
+  // int <lower=0, upper=1> P_median_A_larger_than_q98_B;  // Is median abundance in assessment period larger than 98th percentile in baseline period
+  // int <lower=0, upper=1> P_median_A_larger_than_q5_B; // Is median abundance in assessment period larger than 5th percentile in baseline period
+  
 
   //---------------------------//
   // Estimate annual mortality //
@@ -230,6 +240,14 @@ generated quantities{
   //--------------------------//
   N=exp(logN); // 
   
+  //------------------------------//
+  // Relative age-class abundance //
+  //------------------------------//
+  for(t in 1:Y) {
+    rel_N[,t] = N[,t]/sum(N[,t]);
+  }  
+  
+  
   //---------------------------//
   // simulate each observation //
   //---------------------------//
@@ -267,20 +285,56 @@ generated quantities{
     }
     }
   
-  //-----------------------------------------------------------------------//
-  // calculated log-likelihood for each observation (for model comparison) //
-  //-----------------------------------------------------------------------//
-  int ind; // initialize variable for ragged data structure
-  ind = 1; 
+/////////////////////  
+// Ascets analysis //
+/////////////////////
+//
+// Here we assess to what extent median abundance during an assessment period is higher
+// than abundance during a baseline(reference) period. The analysis follows the bayesian 
+// approach of assessing GES by Laurila-Pant et al. 2020 (Ecol Ind), which is a bayesian extension
+// of the methodolgy developed by Östman et al. (2020 Ecol Ind). 
+// {
+//   vector [N_boot] median_bootA; // bootstrap replicates of median abundance for assessment period
+//   vector [N_boot] median_bootB; // bootstrap replicates of median abundance for baseline period
+// 
+// for (i in 1:N_boot){
+//   array[N_assessment] int idx_A;
+//   array[N_assessment] int idx_B;
+//   for (j in 1:N_assessment) {
+//     idx_A[j] = Y - N_assessment + categorical_rng(rep_vector(1.0 / N_assessment, N_assessment)); // pick a random index with replacement from the assessment period (i.e. from the last N_assessment years)
+//     idx_B[j] = categorical_rng(rep_vector(1.0 / (Y - N_assessment), (Y - N_assessment))); // pick a random index with replacement from the baseline period (i.e. prior assessment period)
+//   } 
+//   median_bootA[i] = quantile_param(N_tot[idx_A], 0.5); // Median for bootstrapped assessment period
+//   median_bootB[i] = quantile_param(N_tot[idx_B], 0.5); // Median for bootstrapped baseline period
+// }
+// 
+// // Derive abundance quantiles from assessment and baseline time periods 
+// median_A = quantile_param(median_bootA, 0.5);      // median abundance in assessment period
+// q5_A = quantile_param(median_bootA, 0.05);         // 5th percential of abundance in assessment period
+// q95_A = quantile_param(median_bootA, 0.95);        // 95th percential of abundance in assessment period
+// q98_B = quantile_param(median_bootB, 0.98);        // 98th percential of abundance in baseline period
+// q5_B = quantile_param(median_bootB, 0.05);         // 5th percential of abundance in baseline period
+// 
+// }
+// // Test whether median in assessment period is larger than q5 and q98 during baseline period
+// P_median_A_larger_than_q98_B = median_A > q98_B; // Is median abundance in assessment period larger than 98th percentile in baseline period
+// P_median_A_larger_than_q5_B = median_A > q5_B; // Is median abundance in assessment period larger than 5th percentile in baseline period
+
   
-  for (t in 1:Y) {
-  if(Y_missing[t] == 0){
-  for (a in 1:A) {
-   for(i in ind:(ind+E[t]-1)){
-        log_lik[i, a] = neg_binomial_2_log_lpmf(y[i, a] | logN[a, t], phi); 
-    }
-  }
-  ind += E[t];
-  }
-} 
+//-----------------------------------------------------------------------//
+// calculated log-likelihood for each observation (for model comparison) //
+//-----------------------------------------------------------------------//
+//   int ind; // initialize variable for ragged data structure
+//   ind = 1; 
+//   
+//   for (t in 1:Y) {
+//   if(Y_missing[t] == 0){
+//   for (a in 1:A) {
+//    for(i in ind:(ind+E[t]-1)){
+//         log_lik[i, a] = neg_binomial_2_log_lpmf(y[i, a] | logN[a, t], phi); 
+//     }
+//   }
+//   ind += E[t];
+//   }
+// } 
 }

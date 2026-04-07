@@ -17,19 +17,18 @@ lang: en
 
 # 1. Introduction
 
-This script is used for testing the reliability of age-based perch model using data simulations. With this regards two general analyses are conducted:
+This script is used for testing the reliability of an age-based perch model developed by Säterberg & Olsson ([2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)) using computer simulations. With this regards two general analyses are conducted:
 
--   First, we estimate bias in age-based mortality parameters using simulated data.
+-   First, we estimate bias in age-specific mortality rate estimates using computer [simulations](#computer_simulations). We are specifically interested in a potential bias in time and age-specific mortality rates, and a potential bias in mean mortality rate per age-class.
 
--   Second, as there are indications that large perch tend to uphold in shallower waters than what smaller perch do we subset the data based on water depth at which gillnets are set and redo the analysis using various data subsets.
+The analyses conducted here are done as we want to assess to what extent the model produces biased estimates. Importantly, as the general result from implementing the age-based model on coastal data suggests that mortality increases with perch age ([Säterberg & Olsson 2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)), we want to address whether this could be due to a model artifact. For example, will a decreasing morality with age be recovered by the model or does the model always suggest an increasing mortality with age independent of the structure of the simulation.
+
 
 ```{r}
 library(MASS)  # Stats functions
 library(tidyverse) # tidy functions
 library(cmdstanr) 
 ```
-
-# 2. Simulation based bias estimation
 
 ```{r}
 
@@ -40,30 +39,245 @@ files.sources <- list.files(path = "../R-simulations", pattern = "\\.R$", full.n
 sapply(files.sources, source)
 ```
 
-## 2.1 Stationary mortality
+# 2. Simulation based bias estimation {#computer_simulations}
 
-Scenarios
+In order to test the reliability of the perch model we simulated data, trying to mimic the general pattern observed in mortality rates observed in the applications of the model to coastal perch data. With this regards, the general pattern in mortality rates observed in applications to coastal perch data, that is, increasing mortality with age and trends in mortality over time, were simulated. Moreover, in order to simulate biologically plausible population dynamics, and mortality patterns, parameter values were set to the ranges observed in model applications to coastal perch data, parameter values were set inspired by Råneå (A system with 7 age classes) and Kinnbäcksfjärden (A system with 4 age classes) as example system.
 
-| Scenario | Number of age-classes | Mortality pattern        | Noise vs signal |
-|----------|-----------------------|--------------------------|-----------------|
-| S1       | 4                     | Increase with age        | 0.5             |
-| S2       | 4                     | Same for all age-classes | 0.5             |
-| S3       | 4                     | Decrease with age        | 0.5             |
-| S4       | 4                     | Increase with age        | 1               |
-| S5       | 4                     | Same for all age-classes | 1               |
-| S6       | 4                     | Decrease with age        | 1               |
-| S7       | 7                     | Increase with age        | 0.5             |
-| S8       | 7                     | Same for all age-classes | 0.5             |
-| S9       | 7                     | Decrease with age        | 0.5             |
-| S10      | 7                     | Increase with age        | 1               |
-| S11      | 7                     | Same for all age-classes | 1               |
-| S12      | 7                     | Decrease with age        | 1               |
+## 2.1 Model overview
+
+Similar to the statistical model, we simulated age-structured population dynamics using a discrete-time model with stochastic recruitment, time-varying mortality, and observation error.
+
+The model tracks abundance-at-age $N_{a,t}$ for age classes $a = 1, \dots, A$ and time steps $t = 1, \dots, T$.
+
+### 2.1.1 Recruitment
+
+Recruitment to the first age class was modeled as a lognormal process:
+
+$$
+N_{1,t} \sim \text{Lognormal}(\mu_R, \sigma_R^2)
+$$
+
+where $\mu_R$ is the mean log recruitment and $\sigma_R$ is the standard deviation on the log scale.
+
+### 2.1.2 Mortality dynamics
+
+Total mortality $Z_{a,t}$ varies over time according to a deterministic signal plus stochastic noise.
+
+#### 2.1.2.1 Deterministic signals
+
+Two alternative temporal trends were implemented.
+
+**Sinusoidal variation:**
+
+$$
+\log Z_t^{\text{signal}} = A \sin(2 \pi f t + \phi)
+$$
+
+```{r}
+#| label: fig-sinus-signal
+#| fig-cap: "Sinus signal implemented as a stationary mortality pattern"
+#| fig-width: 6
+#| fig-height: 4
+
+#####################
+# Plot sinus signal #
+#####################
+
+# Time
+t <- seq(0,20,by=0.1)
+
+# Sinus parameters
+A <- 0.5      # amplitude
+f <- 0.1      # frequency (cycles per time unit)
+phi <- runif(1, 0, 2*pi)   # random phase shift
+
+# sinus signal
+signal <-  A * sin(2 * pi * f * t + phi)
+
+# create data frame
+data <- tibble(t, signal)
+
+# plot sinus trend
+ggplot(data, aes(x=t, y=signal)) + 
+  geom_line() +
+  theme_bw() +
+  labs(x="Time", 
+       y = expression(log(Z[t]^{"signal"})))
+
+```
+
+**Logistic trend:**
+
+$$
+\log Z_t^{\text{signal}} = \frac{K}{1 + \exp(-r (t - t_{\text{mid}}))}
+$$
+
+```{r}
+#| label: fig-logistic-trend
+#| fig-cap: "A logistic trend implemented as a case of an increasing mortality trend"
+#| fig-width: 6
+#| fig-height: 4
+
+#####################
+# Plot sinus signal #
+#####################
+
+# Time
+t_max <- 20
+t <- seq(0,t_max,by=0.1)
+
+# logistic trend parameters  
+K <- 1
+r <- 0.5
+t_mid <- (t_max-1)/2
+signal <- K / (1 + exp(-r * (t - t_mid)))
+
+# create data frame
+data <- tibble(t, signal)
+
+# plot logistic trend
+ggplot(data, aes(x=t, y=signal)) + 
+  geom_line() +
+  theme_bw() +
+  labs(x="Time", 
+       y = expression(log(Z[t]^{"signal"})))
+
+```
+
+#### 2.1.2.2 Noise
+
+Noise and average age class specific mortality rates was added to the deterministic mortality signal:
+
+$$
+\log Z_{a,t} = \mu_a + \log Z_t^{\text{signal}} + \epsilon_{a,t}
+$$
+
+where
+
+$$
+\epsilon_{a,t} \sim \mathcal{N}(0, \sigma_Z^2)
+$$
+
+The variance was scaled relative to the signal:
+
+$$
+\sigma_Z = \kappa \cdot \text{SD}(\log Z^{\text{signal}})
+$$
+
+Mortality was then transformed back to the natural scale:
+
+$$
+Z_{a,t} = \exp(\log Z_{a,t})
+$$
+
+### 2.1.3 Population dynamics
+
+Abundance-at-age followed standard cohort dynamics.
+
+For ages $a < A$:
+
+$$
+N_{a,t} = N_{a-1,t-1} \cdot \exp(-Z_{a-1,t-1})
+$$
+
+For the plus group ($a = A$):
+
+$$
+N_{A,t} = N_{A-1,t-1} \cdot \exp(-Z_{A-1,t-1}) + N_{A,t-1} \cdot \exp(-Z_{A,t-1})
+$$
+
+### 2.1.4 Observation model
+
+Observed counts were generated using a negative binomial distribution:
+
+$$
+y_{i,a,t} \sim \text{NegBin}(N_{a,t}, \phi)
+$$
+
+where $i$ indexes sampling events (gillnet nights) and $\phi$ is the dispersion parameter.
+
+Sampling effort was assumed constant within each year.
+
+### 2.1.5 Simulation implementation
+
+The simulation model was implemented in R and consisted of the following steps:
+
+1.  Simulating recruitment
+2.  Generating mortality trajectories
+3.  Propagating population dynamics
+4.  Adding observation error
+5.  Formatting outputs for Stan
+
+100 replicates of population dynamics, with t=20, 30 gillnet nights were simulated and thereafter assessed using both absolute and relative bias.
+
+### 2.1.6 Simulation scenarios
+
+| Scenario | Number of age-classes | Mortality-time-pattern | Mortality-age-relationship | Noise vs signal |
+|---------------|---------------|---------------|---------------|---------------|
+| S1 | 4 | Stationary | Increase with age | 0.5 |
+| S2 | 4 | Stationary | Same for all age-classes | 0.5 |
+| S3 | 4 | Stationary | Decrease with age | 0.5 |
+| S4 | 4 | Stationary | Increase with age | 1 |
+| S5 | 4 | Stationary | Same for all age-classes | 1 |
+| S6 | 4 | Stationary | Decrease with age | 1 |
+| S7 | 7 | Stationary | Increase with age | 0.5 |
+| S8 | 7 | Stationary | Same for all age-classes | 0.5 |
+| S9 | 7 | Stationary | Decrease with age | 0.5 |
+| S10 | 7 | Stationary | Increase with age | 1 |
+| S11 | 7 | Stationary | Same for all age-classes | 1 |
+| S12 | 7 | Stationary | Decrease with age | 1 |
+| S13 | 4 | Increasing | Increase with age | 0.5 |
+| S14 | 4 | Increasing | Same for all age-classes | 0.5 |
+| S15 | 4 | Increasing | Decrease with age | 0.5 |
+| S16 | 4 | Increasing | Increase with age | 1 |
+| S17 | 4 | Increasing | Same for all age-classes | 1 |
+| S18 | 4 | Increasing | Decrease with age | 1 |
+| S19 | 7 | Increasing | Increase with age | 0.5 |
+| S20 | 7 | Increasing | Same for all age-classes | 0.5 |
+| S21 | 7 | Increasing | Decrease with age | 0.5 |
+| S22 | 7 | Increasing | Increase with age | 1 |
+| S23 | 7 | Increasing | Same for all age-classes | 1 |
+| S24 | 7 | Increasing | Decrease with age | 1 |
 
 : Simulation scenarios {#tbl-sim}
 
-### 2.1.1 Scenario 1: 4 age-classes, mortality increases with age, mortality stationary over time and 0.5 noise to signal
+### 2.1.7 Parameter values
 
-#### 2.1.1.1 Set simulation parameters
+| Scenario | $\mu_R$ | $\sigma_R$ | Deterministic Z-signal | $\mu_a$ | $\kappa$ | $\phi$ | $CV_{Z_a}$ |
+|---------|---------|---------|---------|---------|---------|---------|---------|
+| S1 |  | Stationary | sinus | 0.5 |  |  |  |
+| S2 | 4 | Stationary | Same for all age-classes | 0.5 |  |  |  |
+| S3 | 4 | Stationary | Decrease with age | 0.5 |  |  |  |
+| S4 | 4 | Stationary | Increase with age | 1 |  |  |  |
+| S5 | 4 | Stationary | Same for all age-classes | 1 |  |  |  |
+| S6 | 4 | Stationary | Decrease with age | 1 |  |  |  |
+| S7 | 7 | Stationary | Increase with age | 0.5 |  |  |  |
+| S8 | 7 | Stationary | Same for all age-classes | 0.5 |  |  |  |
+| S9 | 7 | Stationary | Decrease with age | 0.5 |  |  |  |
+| S10 | 7 | Stationary | Increase with age | 1 |  |  |  |
+| S11 | 7 | Stationary | Same for all age-classes | 1 |  |  |  |
+| S12 | 7 | Stationary | Decrease with age | 1 |  |  |  |
+| S13 | 4 | Increasing | Increase with age | 0.5 |  |  |  |
+| S14 | 4 | Increasing | Same for all age-classes | 0.5 |  |  |  |
+| S15 | 4 | Increasing | Decrease with age | 0.5 |  |  |  |
+| S16 | 4 | Increasing | Increase with age | 1 |  |  |  |
+| S17 | 4 | Increasing | Same for all age-classes | 1 |  |  |  |
+| S18 | 4 | Increasing | Decrease with age | 1 |  |  |  |
+| S19 | 7 | Increasing | Increase with age | 0.5 |  |  |  |
+| S20 | 7 | Increasing | Same for all age-classes | 0.5 |  |  |  |
+| S21 | 7 | Increasing | Decrease with age | 0.5 |  |  |  |
+| S22 | 7 | Increasing | Increase with age | 1 |  |  |  |
+| S23 | 7 | Increasing | Same for all age-classes | 1 |  |  |  |
+| S24 | 7 | Increasing | Decrease with age | 1 |  |  |  |
+
+# 3. Results
+
+
+## 3.1 Stationary mortality
+
+### 3.1.1 Scenario 1: 4 age-classes, mortality increases with age, mortality stationary over time and 0.5 noise to signal
+
+#### 3.1.1.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -85,10 +299,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.1.1.2 Simulate and fit model to example data
+#### 3.1.1.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -108,18 +322,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario1.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario1.RDS")
 ```
 
-#### 2.1.1.3 Comparison between simulated and estimated mortality rates
+#### 3.1.1.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario1.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario1.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.1.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.1.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -158,7 +385,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario1.rds")
 
 ```
 
-#### 2.1.1.5 Bias in timevarying mortality
+#### 3.1.1.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -193,7 +420,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.1.6 Bias in mean age-class mortality
+#### 3.1.1.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -233,9 +460,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.2 Scenario 2: 4 age-classes, same mortality across age-classes, mortality stationary over time and 0.5 noise to signal
+### 3.1.2 Scenario 2: 4 age-classes, same mortality across age-classes, mortality stationary over time and 0.5 noise to signal
 
-#### 2.1.2.1 Set simulation parameters
+#### 3.1.2.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -256,10 +483,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.1.2.2 Simulate and fit model to example data
+#### 3.1.2.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -279,18 +506,32 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario2.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario2.RDS")
+
 ```
 
-#### 2.1.2.3 Comparison between simulated and estimated mortality rates
+#### 3.1.2.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario2.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario2.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.2.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.2.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -342,7 +583,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario2.rds")
 
 ```
 
-#### 2.1.2.5 Bias in timevarying mortality
+#### 3.1.2.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -377,7 +618,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.2.6 Bias in mean age-class mortality
+#### 3.1.2.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -417,9 +658,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.3 Scenario 3: 4 age-classes, mortality decreases with age, mortality stationary over time and 0.5 noise to signal
+### 3.1.3 Scenario 3: 4 age-classes, mortality decreases with age, mortality stationary over time and 0.5 noise to signal
 
-#### 2.1.3.1 Set simulation parameters
+#### 3.1.3.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -440,10 +681,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.1.3.2 Simulate and fit model to example data
+#### 3.1.3.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -463,18 +704,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario3.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario3.RDS")
 ```
 
-#### 2.1.3.3 Comparison between simulated and estimated mortality rates
+#### 3.1.3.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario3.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario3.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.3.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.3.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -525,7 +779,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario3.rds")
 
 ```
 
-#### 2.1.3.5 Bias in timevarying mortality
+#### 3.1.3.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -560,7 +814,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.3.6 Bias in mean age-class mortality
+#### 3.1.3.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -600,9 +854,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.4 Scenario 4 - 4 age-classes, mortality increases with age, mortality stationary over time and 1 noise to signal
+### 3.1.4 Scenario 4 - 4 age-classes, mortality increases with age, mortality stationary over time and 1 noise to signal
 
-#### 2.1.4.1 Set simulation parameters
+#### 3.1.4.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -623,10 +877,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.1.4.2 Simulate and fit model to example data
+#### 3.1.4.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -646,18 +900,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario4.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario4.RDS")
 ```
 
-#### 2.1.4.3 Comparison between simulated and estimated mortality rates
+#### 3.1.4.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario4.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario4.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.4.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.4.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -710,7 +977,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario4.rds")
 
 ```
 
-#### 2.1.4.5 Bias in timevarying mortality
+#### 3.1.4.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -745,7 +1012,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.4.6 Bias in mean age-class mortality
+#### 3.1.4.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -785,9 +1052,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.5 Scenario 5: 4 age-classes, same mortality across age, mortality stationary over time and 1 noise to signal
+### 3.1.5 Scenario 5: 4 age-classes, same mortality across age, mortality stationary over time and 1 noise to signal
 
-#### 2.1.5.1 Set simulation parameters
+#### 3.1.5.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -808,10 +1075,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.1.5.2 Simulate and fit model to example data
+#### 3.1.5.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -831,18 +1098,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario5.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario5.RDS")
 ```
 
-#### 2.1.5.3 Comparison between simulated and estimated mortality rates
+#### 3.1.5.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario5.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario5.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.5.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.5.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -895,7 +1175,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario5.rds")
 
 ```
 
-#### 2.1.5.5 Bias in timevarying mortality
+#### 3.1.5.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -930,7 +1210,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.5.6 Bias in mean age-class mortality
+#### 3.1.5.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -970,9 +1250,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.6 Scenario 6: 4 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
+### 3.1.6 Scenario 6: 4 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
 
-#### 2.1.6.1 Set simulation parameters
+#### 3.1.6.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -993,10 +1273,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.1.6.2 Simulate and fit model to example data
+#### 3.1.6.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -1016,18 +1296,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario6.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario6.RDS")
 ```
 
-#### 2.1.6.3 Comparison between simulated and estimated mortality rates
+#### 3.1.6.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario6.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario6.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.6.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.6.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -1078,7 +1371,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario6.rds")
 
 ```
 
-#### 2.1.6.5 Bias in timevarying mortality
+#### 3.1.6.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -1113,7 +1406,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.6.6 Bias in mean age-class mortality
+#### 3.1.6.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -1153,9 +1446,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.7 Scenario 7 - 7 age-classes, mortality increases with age, mortality stationary over time and 0.5 noise to signal
+### 3.1.7 Scenario 7 - 7 age-classes, mortality increases with age, mortality stationary over time and 0.5 noise to signal
 
-#### 2.1.7.1 Set simulation parameters
+#### 3.1.7.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -1174,10 +1467,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.1.7.2 Simulate and fit model to example data
+#### 3.1.7.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -1197,18 +1490,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario7.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario7.RDS")
 ```
 
-#### 2.1.7.3 Comparison between simulated and estimated mortality rates
+#### 3.1.7.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario7.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario7.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.7.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.7.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -1259,7 +1565,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario7.rds")
 
 ```
 
-#### 2.1.7.5 Bias in timevarying mortality
+#### 3.1.7.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -1294,7 +1600,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.7.6 Bias in mean age-class mortality
+#### 3.1.7.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -1334,9 +1640,10 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.8 Scenario 8 - 7 age-classes, same mortality across age, mortality stationary over time and 0.5 noise to signal
+### 3.1.8 Scenario 8 - 7 age-classes, same mortality across age, mortality stationary over time and 0.5 noise to signal
 
-#### 2.1.8.1 Set simulation parameters
+#### 3.1.8.1 Set simulation parameters
+
 ```{r}
 sim_params <- list(
 mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
@@ -1354,9 +1661,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.1.8.2 Simulate and fit model to example data
+#### 3.1.8.2 Simulate and fit model to example data
+
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -1376,18 +1684,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario8.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario8.RDS")
 ```
 
-#### 2.1.8.3 Comparison between simulated and estimated mortality rates
+#### 3.1.8.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario8.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario8.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.8.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.8.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -1438,7 +1759,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario8.rds")
 
 ```
 
-#### 2.1.8.5 Bias in timevarying mortality
+#### 3.1.8.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -1473,7 +1794,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.8.6 Bias in mean age-class mortality
+#### 3.1.8.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -1513,10 +1834,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.9 Scenario 9 - 7 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
+### 3.1.9 Scenario 9 - 7 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
 
-
-#### 2.1.9.1 Set simulation parameters
+#### 3.1.9.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -1535,10 +1855,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.1.9.2 Simulate and fit model to example data
+#### 3.1.9.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -1558,18 +1878,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario9.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario9.RDS")
 ```
 
-#### 2.1.9.3 Comparison between simulated and estimated mortality rates
+#### 3.1.9.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario9.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario9.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.9.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.9.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -1620,7 +1953,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario9.rds")
 
 ```
 
-#### 2.1.9.5 Bias in timevarying mortality
+#### 3.1.9.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -1655,7 +1988,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.9.6 Bias in mean age-class mortality
+#### 3.1.9.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -1695,9 +2028,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.10 Scenario 7 - 7 age-classes, mortality increases with age, mortality stationary over time and 1 noise to signal
+### 3.1.10 Scenario 7 - 7 age-classes, mortality increases with age, mortality stationary over time and 1 noise to signal
 
-#### 2.1.10.1 Set simulation parameters
+#### 3.1.10.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -1716,10 +2049,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.1.10.2 Simulate and fit model to example data
+#### 3.1.10.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -1739,18 +2072,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario10.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario10.RDS")
 ```
 
-#### 2.1.10.3 Comparison between simulated and estimated mortality rates
+#### 3.1.10.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario10.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario10.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.10.4 Simulate data for bias assessment (Obs slow!!!)
+#### 3.1.10.4 Simulate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -1801,7 +2147,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario10.rds")
 
 ```
 
-#### 2.1.10.5 Bias in timevarying mortality
+#### 3.1.10.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -1836,7 +2182,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.10.6 Bias in mean age-class mortality
+#### 3.1.10.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -1876,9 +2222,10 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.11 Scenario 11 - 7 age-classes, same mortality across age, mortality stationary over time and 1 noise to signal
+### 3.1.11 Scenario 11 - 7 age-classes, same mortality across age, mortality stationary over time and 1 noise to signal
 
-#### 2.1.11.1 Set simulation parameters
+#### 3.1.11.1 Set simulation parameters
+
 ```{r}
 sim_params <- list(
 mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
@@ -1896,9 +2243,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.1.11.2 Simulate and fit model to example data
+#### 3.1.11.2 Simulate and fit model to example data
+
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -1918,18 +2266,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario11.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario11.RDS")
 ```
 
-#### 2.1.11.3 Comparison between simulated and estimated mortality rates
+#### 3.1.11.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario11.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario11.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.11.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.11.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -1980,7 +2341,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario11.rds")
 
 ```
 
-#### 2.1.11.5 Bias in timevarying mortality
+#### 3.1.11.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -2015,7 +2376,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.11.6 Bias in mean age-class mortality
+#### 3.1.11.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -2055,9 +2416,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.1.12 Scenario 12 - 7 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
+### 3.1.12 Scenario 12 - 7 age-classes, mortality decreases with age, mortality stationary over time and 1 noise to signal
 
-#### 2.1.12.1 Set simulation parameters
+#### 3.1.12.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -2076,10 +2437,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.1.12.2 Simulate and fit model to example data
+#### 3.1.12.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -2099,18 +2460,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario12.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario12.RDS")
 ```
 
-#### 2.1.12.3 Comparison between simulated and estimated mortality rates
+#### 3.1.12.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario12.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario12.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.1.12.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.12.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -2161,7 +2535,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario12.rds")
 
 ```
 
-#### 2.1.12.5 Bias in timevarying mortality
+#### 3.1.12.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -2196,7 +2570,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.1.12.6 Bias in mean age-class mortality
+#### 3.1.12.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -2235,11 +2609,11 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
        y="Proportion cases CI includes or not includes true value")
 ```
 
-## 2.2 Increasing mortality
+## 3.2 Increasing mortality
 
-### 2.2.1 Scenario 13: 4 age-classes, mortality increases with age, mortality increases over time and 0.5 noise to signal
+### 3.2.1 Scenario 13: 4 age-classes, mortality increases with age, mortality increases over time and 0.5 noise to signal
 
-#### 2.2.1.1 Set simulation parameters
+#### 3.2.1.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -2261,10 +2635,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.2.1.2 Simulate and fit model to example data
+#### 3.2.1.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -2284,18 +2658,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario13.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario13.RDS")
 ```
 
-#### 2.2.1.3 Comparison between simulated and estimated mortality rates
+#### 3.2.1.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario13.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario13.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.1.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.1.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -2334,7 +2721,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario13.rds")
 
 ```
 
-#### 2.2.1.5 Bias in timevarying mortality
+#### 3.2.1.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -2369,7 +2756,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.1.6 Bias in mean age-class mortality
+#### 3.2.1.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -2409,9 +2796,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.2 Scenario 14: 4 age-classes, same mortality across age-classes and 0.5 noise to signal
+### 3.2.2 Scenario 14: 4 age-classes, same mortality across age-classes and 0.5 noise to signal
 
-#### 2.2.2.1 Set simulation parameters
+#### 3.2.2.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -2432,10 +2819,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.2.2.2 Simulate and fit model to example data
+#### 3.2.2.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -2455,18 +2842,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario14.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario14.RDS")
 ```
 
-#### 2.2.2.3 Comparison between simulated and estimated mortality rates
+#### 3.2.2.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario14.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario14.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.2.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.2.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -2518,7 +2918,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario14.rds")
 
 ```
 
-#### 2.2.2.5 Bias in timevarying mortality
+#### 3.2.2.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -2553,7 +2953,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.2.6 Bias in mean age-class mortality
+#### 3.2.2.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -2593,9 +2993,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.3 Scenario 15: 4 age-classes, mortality decreases with age, mortality increases over time and 0.5 noise to signal
+### 3.2.3 Scenario 15: 4 age-classes, mortality decreases with age, mortality increases over time and 0.5 noise to signal
 
-#### 2.2.3.1 Set simulation parameters
+#### 3.2.3.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -2616,10 +3016,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.2.3.2 Simulate and fit model to example data
+#### 3.2.3.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -2639,18 +3039,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario15.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario15.RDS")
 ```
 
-#### 2.2.3.3 Comparison between simulated and estimated mortality rates
+#### 3.2.3.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario15.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario15.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.3.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.3.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -2701,7 +3114,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario15.rds")
 
 ```
 
-#### 2.2.3.5 Bias in timevarying mortality
+#### 3.2.3.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -2736,7 +3149,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.3.6 Bias in mean age-class mortality
+#### 3.2.3.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -2776,9 +3189,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.4 Scenario 16 - 4 age-classes, mortality increases with age, mortality increases over time and 1 noise to signal
+### 3.2.4 Scenario 16 - 4 age-classes, mortality increases with age, mortality increases over time and 1 noise to signal
 
-#### 2.2.4.1 Set simulation parameters
+#### 3.2.4.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -2799,10 +3212,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.2.4.2 Simulate and fit model to example data
+#### 3.2.4.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -2822,18 +3235,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario16.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario16.RDS")
 ```
 
-#### 2.2.4.3 Comparison between simulated and estimated mortality rates
+#### 3.2.4.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario16.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario16.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.4.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.4.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -2886,7 +3312,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario16.rds")
 
 ```
 
-#### 2.2.4.5 Bias in timevarying mortality
+#### 3.2.4.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -2921,7 +3347,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.4.6 Bias in mean age-class mortality
+#### 3.2.4.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -2961,9 +3387,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.5 Scenario 17: 4 age-classes, same mortality across age, mortality increases over time and 1 noise to signal
+### 3.2.5 Scenario 17: 4 age-classes, same mortality across age, mortality increases over time and 1 noise to signal
 
-#### 2.2.5.1 Set simulation parameters
+#### 3.2.5.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -2984,10 +3410,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.2.5.2 Simulate and fit model to example data
+#### 3.2.5.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -3007,18 +3433,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario17.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario17.RDS")
 ```
 
-#### 2.2.5.3 Comparison between simulated and estimated mortality rates
+#### 3.2.5.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario17.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario17.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.5.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.5.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -3071,7 +3510,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario17.rds")
 
 ```
 
-#### 2.2.5.5 Bias in timevarying mortality
+#### 3.2.5.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -3106,7 +3545,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.5.6 Bias in mean age-class mortality
+#### 3.2.5.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -3146,9 +3585,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.6 Scenario 18: 4 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
+### 3.2.6 Scenario 18: 4 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
 
-#### 2.2.6.1 Set simulation parameters
+#### 3.2.6.1 Set simulation parameters
 
 Here we define parameters based on scenario 1 in @tbl-sim.
 
@@ -3169,10 +3608,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.2.6.2 Simulate and fit model to example data
+#### 3.2.6.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -3192,18 +3631,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario18.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario18.RDS")
 ```
 
-#### 2.2.6.3 Comparison between simulated and estimated mortality rates
+#### 3.2.6.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario18.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario18.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.6.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.6.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -3254,7 +3706,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario18.rds")
 
 ```
 
-#### 2.2.6.5 Bias in timevarying mortality
+#### 3.2.6.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -3289,7 +3741,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.6.6 Bias in mean age-class mortality
+#### 3.2.6.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -3329,9 +3781,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.7 Scenario 19 - 7 age-classes, mortality increases with age, mortality increases over time and 0.5 noise to signal
+### 3.2.7 Scenario 19 - 7 age-classes, mortality increases with age, mortality increases over time and 0.5 noise to signal
 
-#### 2.2.7.1 Set simulation parameters
+#### 3.2.7.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -3350,10 +3802,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.2.7.2 Simulate and fit model to example data
+#### 3.2.7.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -3373,18 +3825,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario19.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario19.RDS")
 ```
 
-#### 2.2.7.3 Comparison between simulated and estimated mortality rates
+#### 3.2.7.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario19.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario19.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.7.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.7.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -3435,7 +3900,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario19.rds")
 
 ```
 
-#### 2.2.7.5 Bias in timevarying mortality
+#### 3.2.7.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -3470,7 +3935,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.7.6 Bias in mean age-class mortality
+#### 3.2.7.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -3510,9 +3975,10 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.8 Scenario 20 - 7 age-classes, same mortality across age, mortality increases over time and 0.5 noise to signal
+### 3.2.8 Scenario 20 - 7 age-classes, same mortality across age, mortality increases over time and 0.5 noise to signal
 
-#### 2.2.8.1 Set simulation parameters
+#### 3.2.8.1 Set simulation parameters
+
 ```{r}
 sim_params <- list(
 mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
@@ -3530,9 +3996,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.2.8.2 Simulate and fit model to example data
+#### 3.2.8.2 Simulate and fit model to example data
+
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -3552,18 +4019,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario20.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario20.RDS")
 ```
 
-#### 2.2.8.3 Comparison between simulated and estimated mortality rates
+#### 3.2.8.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario20.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario20.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.8.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.8.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -3614,7 +4094,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario20.rds")
 
 ```
 
-#### 2.2.8.5 Bias in timevarying mortality
+#### 3.2.8.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -3649,7 +4129,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.8.6 Bias in mean age-class mortality
+#### 3.2.8.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -3689,10 +4169,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.9 Scenario 21 - 7 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
+### 3.2.9 Scenario 21 - 7 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
 
-
-#### 2.2.9.1 Set simulation parameters
+#### 3.2.9.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -3711,10 +4190,10 @@ noise_vs_sinus_signal = 0.5                                     # How large shou
 )
 ```
 
-#### 2.2.9.2 Simulate and fit model to example data
+#### 3.2.9.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -3734,18 +4213,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario21.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario21.RDS")
 ```
 
-#### 2.2.9.3 Comparison between simulated and estimated mortality rates
+#### 3.2.9.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario21.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario21.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.9.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.9.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -3796,7 +4288,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario21.rds")
 
 ```
 
-#### 2.2.9.5 Bias in timevarying mortality
+#### 3.2.9.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -3831,7 +4323,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.9.6 Bias in mean age-class mortality
+#### 3.2.9.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -3871,9 +4363,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.10 Scenario 22 - 7 age-classes, mortality increases with age, mortality increases over time and 1 noise to signal
+### 3.2.10 Scenario 22 - 7 age-classes, mortality increases with age, mortality increases over time and 1 noise to signal
 
-#### 2.2.10.1 Set simulation parameters
+#### 3.2.10.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -3892,10 +4384,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.2.10.2 Simulate and fit model to example data
+#### 3.2.10.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -3915,18 +4407,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario22.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario22.RDS")
 ```
 
-#### 2.2.10.3 Comparison between simulated and estimated mortality rates
+#### 3.2.10.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario22.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario22.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.10.4 Simulate data for bias assessment (Obs slow!!!)
+#### 3.2.10.4 Simulate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -3977,7 +4482,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario22.rds")
 
 ```
 
-#### 2.2.10.5 Bias in timevarying mortality
+#### 3.2.10.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -4012,7 +4517,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.10.6 Bias in mean age-class mortality
+#### 3.2.10.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -4052,9 +4557,10 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.11 Scenario 23 - 7 age-classes, same mortality across age, mortality increases over time and 1 noise to signal
+### 3.2.11 Scenario 23 - 7 age-classes, same mortality across age, mortality increases over time and 1 noise to signal
 
-#### 2.2.11.1 Set simulation parameters
+#### 3.2.11.1 Set simulation parameters
+
 ```{r}
 sim_params <- list(
 mu_log_recruitment = 1.32,                                     # Expected value of recruitment on log-scale
@@ -4072,9 +4578,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.2.11.2 Simulate and fit model to example data
+#### 3.2.11.2 Simulate and fit model to example data
+
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -4094,18 +4601,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario23.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario23.RDS")
 ```
 
-#### 2.2.11.3 Comparison between simulated and estimated mortality rates
+#### 3.2.11.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario23.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario23.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.11.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.11.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -4156,7 +4676,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario23.rds")
 
 ```
 
-#### 2.2.11.5 Bias in timevarying mortality
+#### 3.2.11.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -4191,7 +4711,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.11.6 Bias in mean age-class mortality
+#### 3.2.11.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -4231,9 +4751,9 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
 
 ```
 
-### 2.2.12 Scenario 24 - 7 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
+### 3.2.12 Scenario 24 - 7 age-classes, mortality decreases with age, mortality increases over time and 1 noise to signal
 
-#### 2.2.12.1 Set simulation parameters
+#### 3.2.12.1 Set simulation parameters
 
 ```{r}
 sim_params <- list(
@@ -4252,10 +4772,10 @@ noise_vs_sinus_signal = 1                                     # How large should
 )
 ```
 
-#### 2.2.12.2 Simulate and fit model to example data
+#### 3.2.12.2 Simulate and fit model to example data
 
 ```{r}
-#| include: false
+#| eval: false
 
 # simulate data
 sim <- simulate_perch_model(sim_params)              
@@ -4275,18 +4795,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# Save simulated data
+saveRDS(sim,file = "../Data/Simulations/data_example_Scenario24.RDS")
+
+# Save model fit
+fit$save_object(file = "../Data/Simulations/fit_example_Scenario24.RDS")
 ```
 
-#### 2.2.12.3 Comparison between simulated and estimated mortality rates
+#### 3.2.12.3 Comparison between simulated and estimated mortality rates
 
 ```{r}
+# Load example data
+sim <- readRDS("../Data/Simulations/data_example_Scenario24.rds")
+
+# Load model fit to example data
+fit <- readRDS("../Data/Simulations/fit_example_Scenario24.rds")
+
+# compare simulated and estimated mortality rates
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 2.2.12.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.2.12.4 Simualate data for bias assessment (Obs slow!!!)
 
 ```{r}
-#| eval: true
+#| eval: false
 
 n_rep <- 100
 Z <- tibble()
@@ -4337,7 +4870,7 @@ saveRDS(Z, file="../Data/Simulations/Scenario24.rds")
 
 ```
 
-#### 2.2.12.5 Bias in timevarying mortality
+#### 3.2.12.5 Bias in timevarying mortality
 
 ```{r}
 # load mortality data
@@ -4372,7 +4905,7 @@ ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yinter
 
 ```
 
-#### 2.2.12.6 Bias in mean age-class mortality
+#### 3.2.12.6 Bias in mean age-class mortality
 
 ```{r}
 ################################################################################
@@ -4411,5 +4944,4 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
        y="Proportion cases CI includes or not includes true value")
 ```
 
-
-# 3. Effect of data subsetting on
+# 4. Effect of data subsetting on

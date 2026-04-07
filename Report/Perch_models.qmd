@@ -249,6 +249,9 @@ We load data using a direct read-only database connection to SLU datalagret and 
 -   Råneå
 -   Asköfjärden
 -   Kvädöfjärden
+-   Finbo (Åland)
+-   Kumlinge (Åland)
+-   Askrikefjärden (Vaxholm)
 
 ## 2.1 Load effort data {#effordata}
 
@@ -265,7 +268,7 @@ Störning='NEJ'
 AND 
 Godkänd ='JA'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -292,7 +295,7 @@ Godkänd='JA'
 AND 
 Störning='NEJ'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -326,7 +329,7 @@ Godkänd='JA'
 AND 
 Störning='NEJ'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -357,7 +360,7 @@ Here we load information on proportion of males and females in subsamples of the
 SELECT Lokal, Fiskeår, Längdgrupp, ANTAL_HANAR, ANTAL_HONOR, ANTAL
 FROM AquaDW_prod.mart.KUL_STICKPROVSUTFALL ks
 WHERE
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti');
 ```
@@ -542,6 +545,7 @@ ind_sex$isfemale[is.na(ind_sex$isfemale)] <- rbinom(n=sum(is.na(ind_sex$isfemale
 
 ```{r}
 age_per_obsid <- ind_sex %>%
+  filter(!(År <= 2004 & Lokal=="Forsmark")) %>%  # remove odd years with data for forsmark
   group_by(Lokal,År,OBS_ID,ind_age) %>% 
   summarize(N=sum(isfemale)) %>% # number of females per age and net
   ungroup() %>%
@@ -863,10 +867,29 @@ ggsave(paste0("Perch_figures/", plottitle, "_age_class_annual_mortality.png"),
 
 make_mortality_table <- function(STAN_fit_summary, plottitle){
 data <- STAN_fit_summary$Z %>% 
-  select(variable, year, age_class, median, q5, q95) %>%  # select parameters to include in output
-  mutate(median=round(median,2), q5=round(q5,2), q95=round(q95,2)) # round values
+  select(year, age_class, year_class, median, q5, q95) %>%  # select parameters to include in output
+  mutate(median=round(median,2), q5=round(q5,2), q95=round(q95,2)) %>% # round values
+  add_column(Area=plottitle,.before="year")
 ft <- flextable(data)
 set_caption(ft,paste("Age-class mortality", plottitle))
+}
+
+extract_mortality_estimates <- function(STAN_fit_summary, plottitle){
+data <- STAN_fit_summary$Z %>% 
+  select(year, age_class, year_class, median, q5, q95) %>%  # select parameters to include in output
+  mutate(median=round(median,2), q5=round(q5,2), q95=round(q95,2)) %>% # round values
+  add_column(Area=plottitle,.before="year")
+return(data)
+}
+
+extract_recruitment_estimates <- function(STAN_fit_summary, plottitle){
+data <- STAN_fit_summary$R %>% 
+  filter(median != 0) %>% # remove non existing rectruitment indices
+  select(year, min_age, median, q5, q95) %>%  # select parameters to include in output
+  mutate(median=round(median,2), q5=round(q5,2), q95=round(q95,2)) %>% # round values
+  rename(Recruitment_year = year) %>%
+  add_column(Area=plottitle,.before="Recruitment_year")
+return(data)
 }
 
 make_mean_age_class_mortality_table <- function(STAN_fit_summary, plottitle){
@@ -1069,13 +1092,13 @@ stock_indicators <- pred_and_obs_total_stock_size/annual_mortality/recruitment_i
 print(stock_indicators)
 
 # save plot
-ggsave(paste0("Perch_figures/", plottitle, "_stock_indicators.png"),
-           plot=stock_indicators,
-           device="png",
-           width=14,
-           height=2*14*9/16,
-           units="cm",
-           dpi=300)
+# ggsave(paste0("Perch_figures/", plottitle, "_stock_indicators.png"),
+#            plot=stock_indicators,
+#            device="png",
+#            width=14,
+#            height=2*14*9/16,
+#            units="cm",
+#            dpi=300)
 
 }
 
@@ -1099,7 +1122,7 @@ ggsave(paste0("Perch_figures/", plottitle, "_stock_indicators.png"),
 #       a certain age caught per net-night, and only one area has been filtered 
 #       out.
 
-summarize_plusgroup <- function(min_age, plus_age, area, data) {
+summarize_plusgroup <- function(min_age, plus_age, area, Depth_strata = NA, data) {
 
 if (sum(area %in% unique(data$Lokal))!=1){
   print("Error: Lokal(area) not in your data")
@@ -1118,13 +1141,22 @@ pgroup <- as.character(c(plus_age:max_age))
 age_groups <- as.character(c(min_age:(plus_age-1)))  
 
 # sum across all ages above plusgroup age
+if(is.na(Depth_strata)) {
 dat <- data %>%
   filter(Lokal==area) %>% # filter one area
   mutate(plusgroup=rowSums(across(matches(pgroup)))) %>% # sum across plusgroup ages
   select(Lokal, År, OBS_ID, all_of(age_groups), plusgroup) %>% # select some of the variables
   arrange(År) %>% # sort based on year
   rename(year=År) # rename to year
-
+} else {
+dat <- data %>%
+  filter(Lokal==area, 
+         Djupstratum==Depth_strata) %>% # filter one area
+  mutate(plusgroup=rowSums(across(matches(pgroup)))) %>% # sum across plusgroup ages
+  select(Lokal, År, OBS_ID, all_of(age_groups), plusgroup) %>% # select some of the variables
+  arrange(År) %>% # sort based on year
+  rename(year=År) # rename to year
+}
 return(dat)
 }
 
@@ -1321,7 +1353,8 @@ N_tot <- bind_cols(as.data.frame(year), fit$summary("N_tot")) %>%
 
 # Recruitment indicies
 R <- bind_cols(as.data.frame(year), fit$summary("R")) %>%
-  relocate(year,.after=variable)
+  relocate(year,.after=variable) %>%
+  add_column(min_age=N1_age,.after=year)
 
 # Annual mortality per age-class
 Z <- fit$summary("Z") %>% 
@@ -1334,7 +1367,9 @@ Z <- fit$summary("Z") %>%
   ) %>%
   mutate(age_class=as.character(age_class), # change from factor to character
          year=as.integer(as.character(year))) %>% 
-  relocate(year,age_class,.after=variable) # rearrange order of columns
+    mutate(year_class=case_when(age_class=="plusgroup" ~ year - plusage, # Assign year class
+                                age_class!="plusgroup" ~ year - as.numeric(age_class))) %>% 
+  relocate(year,age_class,year_class, .after=variable) # rearrange order of columns
 
 # abundance-weighted arithmetic mean mortality
 Z_mean <- 
@@ -1611,7 +1646,7 @@ In this section data is formatted for fitting the age-based model. Every area is
 
 ## 5.1 Råneå
 
-Add a description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Råneå for a detailed description of the data collection  
 
 ### 5.1.1 Format data
 
@@ -1635,7 +1670,7 @@ plottitle = "Råneå"
 ### 5.1.2 Fit model
 
 ```{r}
-#| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -1652,12 +1687,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Råneå.RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Råneå.RDS")
+
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Råneå",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.1.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -1714,17 +1768,24 @@ ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
 
+# Save mortality estimate 
+Z_Råneå <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Råneå <- extract_recruitment_estimates(fit_summary, plottitle)
+
 ```
 
 ### 5.1.6 Retrospective analysis and prediction accuracy
 
 ```{r}
-#| include: false
+#| eval: false
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
+#| eval: false
 #| warnings: false
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
@@ -1752,7 +1813,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.2 Kinnbäcksfjärden
 
-Add a description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Kinnbäcksfjärden" for a detailed description of the data collection  
 
 ### 5.2.1 Format data
 
@@ -1776,7 +1837,7 @@ plottitle = "Kinnbäcksfjärden"
 ### 5.2.2 Fit model
 
 ```{r}
-#| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -1793,12 +1854,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Kinnbäcksfjärden", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Kinnbäcksfjärden.RDS")
+```
+
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Kinnbäcksfjärden",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.2.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -1854,18 +1934,26 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Kinnbäcksfjärden <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Kinnbäcksfjärden <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.2.6 Retrospective analysis and prediction accuracy
 
 ```{r}
-#| include: false
+#| eval: false
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
+#| eval: false
 #| warnings: false
+
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -1893,7 +1981,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.3 Holmön
 
-Add a description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Holmön" for a detailed description of the data collection  
 
 ### 5.3.1 Format data
 
@@ -1917,7 +2005,7 @@ plottitle = "Holmön"
 ### 5.3.2 Fit model
 
 ```{r}
-#| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -1934,12 +2022,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Holmön", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Holmön.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Holmön",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.3.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -1996,18 +2103,27 @@ ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
 
+# Save mortality estimate 
+Z_Holmön <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Holmön <- extract_recruitment_estimates(fit_summary, plottitle)
+
 ```
 
 ### 5.3.6 Retrospective analysis and prediction accuracy
 
 ```{r}
 #| include: false
+#| eval: false
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
 #| warnings: false
+#| eval: false
+#| 
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -2034,14 +2150,14 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.4 Norrbyn
 
-Add a detailed description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Norrbyn" for a detailed description of the data collection  
 
 ### 5.4.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
-data_wide <- summarize_plusgroup(min_age = 2, 
-                    plus_age = 4, 
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 5, 
                     area = "Norrbyn", 
                     data = join_age_per_obsid_effort)
 
@@ -2059,6 +2175,7 @@ plottitle = "Norrbyn"
 
 ```{r}
 #| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -2075,12 +2192,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Norrbyn", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Norrbyn.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Norrbyn",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.4.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
+
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
 # check for potential sampling issues
@@ -2135,18 +2271,28 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Norrbyn <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Norrbyn <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.4.6 Retrospective analysis and prediction accuracy
 
 ```{r}
 #| include: false
+#| eval: false
+
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
 #| warnings: false
+#| eval: false
+
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -2174,7 +2320,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.5 Gaviksfjärden
 
-Add a detailed description of the area.
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Gaviksfjärden" for a detailed description of the data collection  
 
 ### 5.5.1 Format data
 
@@ -2199,6 +2345,7 @@ plottitle = "Gaviksfjärden"
 
 ```{r}
 #| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -2215,12 +2362,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Gaviksfjärden", Sys.Date(),".RDS"))
+
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Gaviksfjärden.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Gaviksfjärden",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.5.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -2273,17 +2439,26 @@ make_mortality_table(fit_summary,plottitle = plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Gaviksfjärden <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Gaviksfjärden <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.5.6 Retrospective analysis and prediction accuracy
 
 ```{r}
 #| include: false
+#| eval: false
+
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
+#| eval: false
 #| warnings: false
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
@@ -2311,7 +2486,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.6 Långvindsfjärden
 
-Add detailed description of the area.
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Långvindsfjärden" for a detailed description of the data collection  
 
 ### 5.6.1 Format data
 
@@ -2336,6 +2511,7 @@ plottitle = "Långvindsfjärden"
 
 ```{r}
 #| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -2352,12 +2528,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Långvindsfjärden", Sys.Date(),".RDS"))
+
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Långvindsfjärden.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Långvindsfjärden",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.6.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -2413,18 +2608,28 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Långvindsfjärden <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Långvindsfjärden <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.6.6 Retrospective analysis and prediction accuracy
 
 ```{r}
 #| include: false
+#| eval: false
+
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
 #| warnings: false
+#| eval: false
+
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -2450,14 +2655,14 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.7 Forsmark
 
-Add detailed description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Forsmark" for a detailed description of the data collection  
 
 ### 5.7.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
 data_wide <- summarize_plusgroup(min_age = 1, 
-                    plus_age = 6, 
+                    plus_age = 5, 
                     area = "Forsmark", 
                     data = join_age_per_obsid_effort)
 
@@ -2478,6 +2683,7 @@ plottitle = "Forsmark"
 
 ```{r}
 #| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -2494,12 +2700,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Forsmark", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Forsmark.RDS")
 ```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Forsmark",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
+```
+
 
 ### 5.7.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -2555,18 +2780,28 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Forsmark <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Forsmark <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.7.6 Retrospective analysis and prediction accuracy
 
 ```{r}
+#| eval: false
 #| include: false
+
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
 #| warnings: false
+#| eval: false
+
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -2592,18 +2827,21 @@ calculate_prediction_accuracy(data_long,retr_data)
 -   The model suggests that old individuals have a higher mortality rate than young individuals, with plugproup being hard to assess due to the uncertainty in predictions.
 -   The model suggests that an increased mortality may have been counteracted by an increased recruitment in the area, summing up to a relatively stable total stock size dynamics with more young individuals in the stock.
 
-## 5.8 Lagnö
+## 5.8 Finbo(Åland)
 
-Add a detailed description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Finbo, Åland" for a detailed description of the data collection  
 
 ### 5.8.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
 data_wide <- summarize_plusgroup(min_age = 1, 
-                    plus_age = 5, 
-                    area = "Lagnö", 
+                    plus_age = 8, 
+                    area = "Finbo, Åland", 
                     data = join_age_per_obsid_effort)
+
+# Exclude the first two years of data for Forsmark(2002-2003). These are odd
+data_wide <- data_wide 
 
 # Rearrange into long format for plotting etc.
 data_long <- create_long_format(data_wide)
@@ -2612,12 +2850,13 @@ data_long <- create_long_format(data_wide)
 STAN_input <- create_STAN_input_list(data_wide)
 
 # Add title for plots for this area
-plottitle = "Lagnö"
+plottitle = "Finbo(Åland)"
 ```
 
 ### 5.8.2 Fit model
 
 ```{r}
+#| eval: false
 #| include: false
 
 # compile model
@@ -2635,12 +2874,31 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Finbo", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Finbo.RDS")
 ```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Finbo",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
+```
+
 
 ### 5.8.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -2665,7 +2923,7 @@ R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input
 
 #### 5.8.4.1 Comment on model fit
 
-All paramers have converged and only one divergent transition was observed. There is no clear peak in the catch-curve for this area, but the highest mean cpue was observed for one-year-olds. The model clearly underestimates the proportion of zeros in the data for one-year-old and clearly overestimates the proportion of two-year-olds. Should a zero-inflated model be tested??
+The model has converged and there is only one divergent transitions. The model underestimates the proportion of zeros in data for age-group 1 and seems to overestimate the age-group 1 abundance to some extent. There might also be a slight underestimation age-class 2 abundance.
 
 ### 5.8.5 Stock indicators
 
@@ -2696,17 +2954,25 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Finbo <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Finbo <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.8.6 Retrospective analysis and prediction accuracy
 
 ```{r}
+#| eval: false
 #| include: false
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
+#| eval: false
 #| warnings: false
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
@@ -2726,25 +2992,21 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ### 5.8.7 Conclusions
 
--   There are some very clear patterns in the stock indicators for this area.
-    -   Mortality has clearly increased over the years.
-    -   Recruitment(which is indirectly dependent on mortality estimates) has also increased.
-    -   The total stock size has remained relatively stable over the years.
-    -   Older individuals are clearly more strongly affected by mortality than younger individuals.
--   What is quite clear for this area is that the stock is getting more and more dominated by young individuals.
+## 5.9 Kumlinge(Åland)
 
-## 5.9 Asköfjärden
-
-Add a description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Kumlinge, Åland" for a detailed description of the data collection  
 
 ### 5.9.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
-data_wide <- summarize_plusgroup(min_age = 2, 
+data_wide <- summarize_plusgroup(min_age = 1, 
                     plus_age = 5, 
-                    area = "Asköfjärden", 
+                    area = "Kumlinge, Åland", 
                     data = join_age_per_obsid_effort)
+
+# Exclude the first two years of data for Forsmark(2002-2003). These are odd
+data_wide <- data_wide 
 
 # Rearrange into long format for plotting etc.
 data_long <- create_long_format(data_wide)
@@ -2753,13 +3015,14 @@ data_long <- create_long_format(data_wide)
 STAN_input <- create_STAN_input_list(data_wide)
 
 # Add title for plots for this area
-plottitle = "Asköfjärden"
+plottitle = "Kumlinge(Åland)"
 ```
 
 ### 5.9.2 Fit model
 
 ```{r}
 #| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -2776,12 +3039,30 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Kumlinge", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Kumlinge.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Kumlinge",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.9.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -2806,7 +3087,7 @@ R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input
 
 #### 5.9.4.1 Comment on model fit
 
-There are a few divergent transitions(8 out of 4000 transitions), but all parameters covergenced. Posterior predictive checks illustrate a fairly good fit to data. However, for the first age-group considered the model tend to underestimate the proportion of zeros. I don´t think this is a major issue here.
+The model has converged and there is only one divergent transitions. The model underestimates the proportion of zeros in data for age-group 1 and seems to overestimate the age-group 1 abundance to some extent. There might also be a slight underestimation age-class 2 abundance.
 
 ### 5.9.5 Stock indicators
 
@@ -2837,18 +3118,28 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Kumlinge <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Kumlinge <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.9.6 Retrospective analysis and prediction accuracy
 
 ```{r}
 #| include: false
+#| eval: false
+
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
 #| warnings: false
+#| eval: false
+
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -2865,23 +3156,17 @@ calculate_Mohns_rho_N(retr_data,n_peels=5)
 calculate_prediction_accuracy(data_long,retr_data)
 ```
 
-### 5.9.7 Conclusion
+## 5.10 Lagnö
 
--   The model appears to fit the data very well.
--   It is a clear and distinct break in this time series. Around year 2013 mortality abruptly increased, giving rise to relatively low total stock size. Moreover, at the same time the number of 3-year-olds, 4-year-olds and 5-year old individuals almost dissapeared from the stock.
--   There is a definite problem of fitting this data set as there is almost no information to use in the fitting process as almost no indivuals of 3-year-olds and older indivduals are found in the data after year 2015. This leads to large uncertainties in mortality estimates.
-
-## 5.10 Kvädöfjärden
-
-Note tha K053 (Nätlänkar) instead of K064 (nordiska nät) have been used to collect data here!
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Lagnö" for a detailed description of the data collection  
 
 ### 5.10.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
 data_wide <- summarize_plusgroup(min_age = 1, 
-                    plus_age = 6, 
-                    area = "Kvädöfjärden", 
+                    plus_age = 5, 
+                    area = "Lagnö", 
                     data = join_age_per_obsid_effort)
 
 # Rearrange into long format for plotting etc.
@@ -2891,13 +3176,13 @@ data_long <- create_long_format(data_wide)
 STAN_input <- create_STAN_input_list(data_wide)
 
 # Add title for plots for this area
-plottitle = "Kvädöfjärden"
+plottitle = "Lagnö"
 ```
 
 ### 5.10.2 Fit model
 
 ```{r}
-#| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -2914,12 +3199,30 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Lagnö", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Lagnö.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Lagnö",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.10.3 Model diagnostics
 
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: FALSE 
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
@@ -2944,7 +3247,7 @@ R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input
 
 #### 5.10.4.1 Comment on model fit
 
-There are no issues with divergent transitions or parameter convergence. Posterior predictive checks illustrate a fairly good fit to data. However, for the first age-groups considered the model tend to over- and under-estimate the proportion of zeros in data.
+All paramers have converged and only one divergent transition was observed. There is no clear peak in the catch-curve for this area, but the highest mean cpue was observed for one-year-olds. The model clearly underestimates the proportion of zeros in the data for one-year-old and clearly overestimates the proportion of two-year-olds. Should a zero-inflated model be tested??
 
 ### 5.10.5 Stock indicators
 
@@ -2975,18 +3278,28 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Lagnö <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Lagnö <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.10.6 Retrospective analysis and prediction accuracy
 
 ```{r}
 #| include: false
+#| eval: false
+
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
 #| warnings: false
+#| eval: false
+
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -3003,23 +3316,26 @@ calculate_Mohns_rho_N(retr_data,n_peels=5)
 calculate_prediction_accuracy(data_long,retr_data)
 ```
 
-### 5.10.7 Conclusion
+### 5.10.7 Conclusions
 
--   The model suggest relatively random fluctuations in total stock size.
--   Mortality appears to decrease over time for one-year-olds, whereas no clear time patterns are observed for other age-classes.
--   Overall the dynamics appears to be relatively stable, suggesting a relatively healthy stock
+-   There are some very clear patterns in the stock indicators for this area.
+    -   Mortality has clearly increased over the years.
+    -   Recruitment(which is indirectly dependent on mortality estimates) has also increased.
+    -   The total stock size has remained relatively stable over the years.
+    -   Older individuals are clearly more strongly affected by mortality than younger individuals.
+-   What is quite clear for this area is that the stock is getting more and more dominated by young individuals.
 
-## 5.11 Torhamn
+## 5.11 Askrikefjärden (Vaxholm)
 
-Add a description of the area
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Vaxholm (Askrikefjärden)" for a detailed description of the data collection  
 
 ### 5.11.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
 data_wide <- summarize_plusgroup(min_age = 1, 
-                    plus_age = 3, 
-                    area = "Torhamn, Karlskrona Ö skärgård", 
+                    plus_age = 8, 
+                    area = "Askrikefjärden", 
                     data = join_age_per_obsid_effort)
 
 # Rearrange into long format for plotting etc.
@@ -3029,13 +3345,13 @@ data_long <- create_long_format(data_wide)
 STAN_input <- create_STAN_input_list(data_wide)
 
 # Add title for plots for this area
-plottitle = "Torhamn"
+plottitle = "Askrikefjärden (Vaxholm)"
 ```
 
 ### 5.11.2 Fit model
 
 ```{r}
-#| include: false
+#| eval: false
 
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
@@ -3052,19 +3368,38 @@ fit <- model$sample(
   parallel_chains = 4,
   refresh = 100
 )
+
+fit$save_object(paste0("../MCMCOutput/fit_Askrikefjärden", Sys.Date(),".RDS"))
+
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Askrikefjärden.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Askrikefjärden",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
 ```
 
 ### 5.11.3 Model diagnostics
-
 ```{r}
-##| eval: FALSE # This needs to be run for each area
+#| eval: false
 
 print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
 
 # check for potential sampling issues
-print(fit$cmdstan_diagnose())
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
 
 ```
+
+
 
 ### 5.11.4 Model fit
 
@@ -3082,7 +3417,7 @@ R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input
 
 #### 5.11.4.1 Comment on model fit
 
-Fit seems to be ok. The model has converged and there are no apparent issues with divergent transitions. Further, posterior predictive checks indicate that the model is doing a good job for in-sample data (i.e. model simulations of the distribution of data points is similar to the observed distribution). Note, however, that the model tends to underestimate the number times zero one-year-olds are caught in the nets. Nevertheless, this can be seen as minor issue given the overall nice fit and that there are no convergence issues. Hence, we move on and plot some nice figures.
+All paramers have converged and only one divergent transition was observed. There is no clear peak in the catch-curve for this area, but the highest mean cpue was observed for one-year-olds. The model clearly underestimates the proportion of zeros in the data for one-year-old and clearly overestimates the proportion of two-year-olds. Should a zero-inflated model be tested??
 
 ### 5.11.5 Stock indicators
 
@@ -3113,18 +3448,26 @@ visualize_mean_age_class_mortality(fit_summary, plottitle)
 ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
 print(ft) # render in qmd
 assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Askrikefjärden <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Askrikefjärden <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
 ### 5.11.6 Retrospective analysis and prediction accuracy
 
 ```{r}
-#| include: false
+#| eval: false
 # conduct retrospective analysis
 retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
 ```
 
 ```{r}
+#| eval: false
 #| warnings: false
+
 # Plot peels Z
 plot_peels_Z(retr_data,plottitle)
 
@@ -3143,20 +3486,572 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ### 5.11.7 Conclusions
 
+-   There are some very clear patterns in the stock indicators for this area.
+    -   Mortality has clearly increased over the years.
+    -   Recruitment(which is indirectly dependent on mortality estimates) has also increased.
+    -   The total stock size has remained relatively stable over the years.
+    -   Older individuals are clearly more strongly affected by mortality than younger individuals.
+-   What is quite clear for this area is that the stock is getting more and more dominated by young individuals.
+
+## 5.12 Asköfjärden
+
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Asköfjärden" for a detailed description of the data collection  
+
+### 5.12.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 2, 
+                    plus_age = 5, 
+                    area = "Asköfjärden", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Asköfjärden"
+```
+
+### 5.12.2 Fit model
+
+```{r}
+#| eval: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Asköfjärden", Sys.Date(),".RDS"))
+
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Asköfjärden.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Asköfjärden",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
+```
+
+
+### 5.12.3 Model diagnostics
+
+```{r}
+#| eval: FALSE 
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.12.4 Model fit
+
+```{r}
+#| eval: false
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+#R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.12.4.1 Comment on model fit
+
+There are a few divergent transitions(8 out of 4000 transitions), but all parameters covergenced. Posterior predictive checks illustrate a fairly good fit to data. However, for the first age-group considered the model tend to underestimate the proportion of zeros. I don´t think this is a major issue here.
+
+### 5.12.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Asköfjärden <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Asköfjärden <- extract_recruitment_estimates(fit_summary, plottitle)
+```
+
+### 5.12.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| eval: false
+#| include: false
+
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+#| eval: false
+
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.12.7 Conclusion
+
+-   The model appears to fit the data very well.
+-   It is a clear and distinct break in this time series. Around year 2013 mortality abruptly increased, giving rise to relatively low total stock size. Moreover, at the same time the number of 3-year-olds, 4-year-olds and 5-year old individuals almost dissapeared from the stock.
+-   There is a definite problem of fitting this data set as there is almost no information to use in the fitting process as almost no indivuals of 3-year-olds and older indivduals are found in the data after year 2015. This leads to large uncertainties in mortality estimates.
+
+## 5.13 Kvädöfjärden
+
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Kvädöfjärden" for a detailed description of the data collection  
+Note tha K053 (Nätlänkar) instead of K064 (nordiska nät) have been used to collect age-data here!
+
+### 5.13.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 6, 
+                    area = "Kvädöfjärden", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Kvädöfjärden"
+```
+
+### 5.13.2 Fit model
+
+```{r}
+#| include: false
+#| eval: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Kvädöfjärden", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Kvädöfjärden.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Kvädöfjärden",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
+```
+
+
+### 5.13.3 Model diagnostics
+
+```{r}
+#| eval: FALSE 
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.13.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.13.4.1 Comment on model fit
+
+There are no issues with divergent transitions or parameter convergence. Posterior predictive checks illustrate a fairly good fit to data. However, for the first age-groups considered the model tend to over- and under-estimate the proportion of zeros in data.
+
+### 5.13.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Kvädöfjärden <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Kvädöfjärden <- extract_recruitment_estimates(fit_summary, plottitle)
+```
+
+### 5.13.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+#| eval: false
+
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+#| eval: false
+
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.13.7 Conclusion
+
+-   The model suggest relatively random fluctuations in total stock size.
+-   Mortality appears to decrease over time for one-year-olds, whereas no clear time patterns are observed for other age-classes.
+-   Overall the dynamics appears to be relatively stable, suggesting a relatively healthy stock
+
+## 5.14 Torhamn
+
+See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Torhamn" for a detailed description of the data collection  
+### 5.14.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1, 
+                    plus_age = 3, 
+                    area = "Torhamn, Karlskrona Ö skärgård", 
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Torhamn"
+```
+
+### 5.14.2 Fit model
+
+```{r}
+#| include: false
+#| eval: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000, 
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta = 0.95,
+  seed = 124,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Torhamn", Sys.Date(),".RDS"))
+
+# save input data
+saveRDS(STAN_input, 
+        "../MCMCOutput/inputdata_Torhamn.RDS")
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Torhamn",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
+```
+
+### 5.14.3 Model diagnostics
+
+```{r}
+
+#| eval: FALSE 
+if (FALSE) {
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose())
+}
+```
+
+### 5.14.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.14.4.1 Comment on model fit
+
+Fit seems to be ok. The model has converged and there are no apparent issues with divergent transitions. Further, posterior predictive checks indicate that the model is doing a good job for in-sample data (i.e. model simulations of the distribution of data points is similar to the observed distribution). Note, however, that the model tends to underestimate the number times zero one-year-olds are caught in the nets. Nevertheless, this can be seen as minor issue given the overall nice fit and that there are no convergence issues. Hence, we move on and plot some nice figures.
+
+### 5.14.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save mortality estimate 
+Z_Torhamn <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Torhamn <- extract_recruitment_estimates(fit_summary, plottitle)
+```
+
+### 5.14.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| include: false
+#| eval: false
+
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| warnings: false
+#| eval: false
+
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.14.7 Conclusions
+
 -   The model fit seems to be relatively good.
 -   Mortality rate has increased in Torhamn during the last couple of years(from appr. 2018 and onwards), which is reflected by the very low number of individuals at age 3 and above during the last couple of years.
 -   According to the model, in general mortality is higher for old as compared to young individuals in the stock.
 -   The recruitment index has had a few peeks during the last years, for which the year-class of the very varm summer 2018 stands out. During 2018 it appears as if it was a peek in recruitment, and a strong year-class was born.
 
-## 5.12 Plot mortality all areas
+## 5.15 Plot mortality all areas
+
+<!-- ```{r} -->
+<!-- # colours for plotting -->
+<!-- # wong_colors <- c( -->
+<!-- #   "#000000", "#E69F00", "#56B4E9", "#009E73", -->
+<!-- #   "#F0E442", "#0072B2", "#D55E00", "#CC79A7", -->
+<!-- #   "#999999", "#E69F00", "#56B4E9", "#009E73" -->
+<!-- # )                -->
+<!-- #  -->
+<!-- #  -->
+<!-- #  -->
+<!-- # # number of areas -->
+<!-- # n_areas <- length(unique(Z_all_areas$Area)) -->
+<!-- #  -->
+<!-- # #make plot -->
+<!-- # plot_Z_all_areas <- ggplot(Z_all_areas,aes(y=median,ymin=q5,ymax=q95,x=Area_short,color=Area_short)) + -->
+<!-- #   geom_pointrange() + -->
+<!-- #   theme_bw()+ -->
+<!-- #   scale_colour_manual(values = wong_colors[1:n_areas]) + -->
+<!-- #   ylab(expression(bar(Z)[a])) + -->
+<!-- #   xlab("") + # remove x-label -->
+<!-- #   theme(legend.position = "none") +  # This line removes the legen -->
+<!-- #   facet_wrap(~age_class) -->
+<!-- #  -->
+<!-- # # save figure -->
+<!-- # ggsave(paste0("Perch_figures/plot_Z_all_areas.png"), -->
+<!-- #            plot=plot_Z_all_areas, -->
+<!-- #            device="png", -->
+<!-- #            width=14, -->
+<!-- #            height=2*14*9/16, -->
+<!-- #            units="cm", -->
+<!-- #            dpi=300) -->
+
+<!-- ``` -->
+
+## 5.16 Save mortality and recruitment estimates for all areas
 
 ```{r}
-# colours for plotting
-wong_colors <- c(
-  "#000000", "#E69F00", "#56B4E9", "#009E73",
-  "#F0E442", "#0072B2", "#D55E00", "#CC79A7",
-  "#999999", "#E69F00", "#56B4E9", "#009E73"
-)               
+
+# extract GIS coordinates to areas
+GIS_coord <- unique(cbind(Kul_data$Lokal, Kul_data$Lat_grader_lokal, Kul_data$Long_grader_lokal))
+colnames(GIS_coord) <- c("Area","Lat_degrees","Long_degrees")
+GIS_coord <- as_tibble(GIS_coord)
+
+GIS_coord <- GIS_coord %>%
+             mutate(Area = case_match(Area, 
+                    "Torhamn, Karlskrona Ö skärgård" ~ "Torhamn",
+                    "Finbo, Åland" ~ "Finbo(Åland)",
+                    "Kumlinge, Åland" ~ "Kumlinge(Åland)",
+                    "Askrikefjärden" ~ "Askrikefjärden (Vaxholm)",
+                    .default=Area
+                    ))
+
 
 
 Z_all_areas <- bind_rows(Z_Råneå,
@@ -3166,42 +4061,51 @@ Z_all_areas <- bind_rows(Z_Råneå,
                          Z_Gaviksfjärden,
                          Z_Långvindsfjärden,
                          Z_Forsmark,
+                         Z_Finbo,
+                         Z_Kumlinge,
                          Z_Lagnö,
+                         Z_Askrikefjärden,
                          Z_Asköfjärden,
                          Z_Kvädöfjärden,
                          Z_Torhamn) %>%
-               filter(age_class!="plusgroup") %>%
-               mutate(
-                      Area_short = str_sub(Area, 1, 2),           # Extract first two letters
-                      Area_short = fct_inorder(Area_short)        # Ensure consistent factor order
-                     )
+                right_join(GIS_coord, by = join_by(Area)) # append GIS coordinates to mortality estimates
+
+#%>%
+#               filter(age_class!="plusgroup") %>%
+#               mutate(
+#                      Area_short = str_sub(Area, 1, 2),           # Extract first two letters
+#                      Area_short = fct_inorder(Area_short)        # Ensure consistent factor order
+#                     )
+
+
+R_all_areas <- bind_rows(R_Råneå,
+                         R_Kinnbäcksfjärden,
+                         R_Holmön,
+                         R_Norrbyn,
+                         R_Gaviksfjärden,
+                         R_Långvindsfjärden,
+                         R_Forsmark,
+                         R_Finbo,
+                         R_Kumlinge,
+                         R_Lagnö,
+                         R_Askrikefjärden,
+                         R_Asköfjärden,
+                         R_Kvädöfjärden,
+                         R_Torhamn) %>%
+                right_join(GIS_coord, by = join_by(Area)) # append GIS coordinates to recruitment estimates
+
+
+############################################
+# Save mortality and recruitment estimates #
+############################################
 
 # save table with mortalities for all areas
 write_csv(Z_all_areas, "Perch_figures/Z_all_areas.csv") 
 
-# number of areas
-n_areas <- length(unique(Z_all_areas$Area))
-
-#make plot
-plot_Z_all_areas <- ggplot(Z_all_areas,aes(y=median,ymin=q5,ymax=q95,x=Area_short,color=Area_short)) +
-  geom_pointrange() +
-  theme_bw()+
-  scale_colour_manual(values = wong_colors[1:n_areas]) +
-  ylab(expression(bar(Z)[a])) +
-  xlab("") + # remove x-label
-  theme(legend.position = "none") +  # This line removes the legen
-  facet_wrap(~age_class)
-
-# save figure
-ggsave(paste0("Perch_figures/plot_Z_all_areas.png"),
-           plot=plot_Z_all_areas,
-           device="png",
-           width=14,
-           height=2*14*9/16,
-           units="cm",
-           dpi=300)
-
+# save table with recruitment index for all areas
+write_csv(R_all_areas, "Perch_figures/R_all_areas.csv") 
 ```
+
 
 # 6 Concluding remarks
 
