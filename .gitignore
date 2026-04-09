@@ -4,5 +4,7 @@
 .Ruserdata
 *.Html
 *.exe
+*.RDS
 
 /DATA
+/MCMCOutput

@@ -12,14 +12,14 @@ warning: FALSE
 message: FALSE
 toc: true
 toc-depth: 3
-lang: sv  
+lang: en  
 ---
 
 # 1. Introduction
-This script is used as a sensitivity analysis of the effect of depth on mortality in the Säterberg et al. 2026 perch model paper. 
 
+This script is used as a sensitivity analysis of the effect of depth on mortality in the Säterberg et al. 2026 perch model paper.
 
--   As there are indications that large perch tend to in habituate shallow waters to a larger extent than what smaller perch do ([Bergström et al. 2016](https://www.sciencedirect.com/science/article/pii/S0272771416304899%5D)) we subset the data based on water depth at which gill-nets are set and redo the analysis using various data subsets. The analysis is conducted in order to test whether the age-mortality pattern observed among coastal perch populations persist when only shallow sites are used as data source. If the same pattern, that is, an increasing mortality with age, is observed for shallow as well as deep areas it indicates that the population is relatively well sampled.
+As there are indications that large perch tend to in habituate shallow waters to a larger extent than what smaller perch do ([Bergström et al. 2016](https://www.sciencedirect.com/science/article/pii/S0272771416304899%5D)) we subset the data based on water depth at which gill-nets are set and redo the analysis using various data subsets. The analysis is conducted in order to test whether the age-mortality pattern observed among coastal perch populations persist when only shallow sites are used as data source. If the same pattern, that is, an increasing mortality with age, is observed for shallow as well as deep areas it indicates that the population is relatively well sampled.
 
 ## 1.1 Required R-packages {#R-packages}
 
@@ -41,7 +41,6 @@ library(cmdstanr) # fitting stan models through R
 library(patchwork) # combining multiple ggplots
 ```
 
-
 ## 1.2 Connect to KUL-database {#dbconnection}
 
 ```{r}
@@ -53,6 +52,15 @@ AQ_con <- dbConnect(odbc(),
                          Database = "AquaDW_prod", 
                          Trusted_Connection = "TRUE", 
                          encoding = "UTF-8")
+```
+
+## 1.3 Source utility functions
+
+```{r}
+files <- list.files("../R", pattern = "\\.R$", full.names = TRUE)
+invisible(lapply(files, function(f) {
+  source(f, echo = FALSE, verbose = FALSE)
+}))
 ```
 
 # 2. Load data
@@ -199,7 +207,7 @@ Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti');
 
 # 3 Transform data {#transformdata}
 
-Here we transform and analyse data. Age-length keys are derived, proportion of females in the samples are calculated, data is subsetted into age-classes.
+Here we transform and analyse data. Age-length keys are derived, proportion of females in the samples are calculated and data is subsetted into age-classes.
 
 ## 3.1 Remove NAs from individual and catch data sets {#filterdata}
 
@@ -344,7 +352,6 @@ female_prop_area <-
 
 ```
 
-
 ### 3.3.2 Randomly assign sex to indivuals {#assignsex}
 
 Here we randomly assign sex to individuals using a bernoulli model:
@@ -407,6 +414,9 @@ join_age_per_obsid_effort <- age_per_obsid %>%
 ```
 
 ### 3.2.5 Define minimum age and plus-group for each area
+
+Here we define which age-classes to use in the model. The minimum age-class is the age-class at which mean CPUE per age-class is at its peak, and plus-groups are defined as the smallest age at which an age-class has a CPUE value larged than 0.2.
+
 ```{r}
 ages_in_model <- 
 join_age_per_obsid_effort %>%
@@ -422,6 +432,9 @@ join_age_per_obsid_effort %>%
 ```
 
 ## 3.3 Define scenarios to run
+
+Here we define how data should be subsetted. We divde data based on area and the depth strata at which multimesh gillnets were set.
+
 ```{r}
 
 combinations <- join_age_per_obsid_effort %>%
@@ -430,15 +443,19 @@ combinations <- join_age_per_obsid_effort %>%
 
 ```
 
-# 4. Run analyses
+# 4. Fit models
 
 ## 4.1 Compile model
+
 ```{r}
 # compile model
 model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
 ```
 
 ## 4.2 Fit all models
+
+Here we fit models to all combinations of data subsets defined above, that is, for each site and depth stratum we fit separate models. This code chunk is slow!! Hence, only use once and load MCMC data from the repository (MCMCOutput/Sensitivity_analysis) for analysis.
+
 ```{r}
 #| eval: false
 
@@ -499,41 +516,56 @@ fit$save_object(paste0("../MCMCOutput/Sensitivity_analysis/",
 ```
 
 ## 4.3 Load fitted data
-```{r}
-sensitivity_models_all_files <- list.files("../MCMCOutput/Sensitivity_analysis/",full.names="TRUE") # paths to saved files
-sensitivity_models_fit_files <- grep("fit_", sensitivity_models_all_files, value = TRUE) # paths to mcmc summary files
-sensitivity_models_inputdata_files <- grep("inputdata_", sensitivity_models_all_files, value = TRUE) # paths to input data files
-baseline_models_all_files <- list.files("../MCMCOutput/",pattern=".RDS$",full.names="TRUE") # paths to saved files
-baseline_models_fit_files <- grep("fit_", baseline_models_all_files, value = TRUE) # paths to saved files
-baseline_models_inputdata_files <- grep("inputdata_", baseline_models_all_files, value = TRUE) # paths to saved files
 
+Here we load data for all models based on various data subsets(Areas and depth strata). We load both MCMC results from the baseline models, i.e. models including all data, and models based on data subset. Thereafter, we evaluate what data subsetting does for the analysis.
+
+```{r}
+##############################################
+# File paths to models based on data subsets #
+##############################################
+sensitivity_models_all_files <- list.files("../MCMCOutput/Sensitivity_analysis/",full.names="TRUE") # paths to saved files
+sensitivity_models_fit_files <- grep("fit_", sensitivity_models_all_files, value = TRUE) # paths to mcmc model fit summary files
+sensitivity_models_inputdata_files <- grep("inputdata_", sensitivity_models_all_files, value = TRUE) # paths to input data files
+
+#####################################
+# File paths to baseline model fits #
+#####################################
+baseline_models_all_files <- list.files("../MCMCOutput/",pattern=".RDS$",full.names="TRUE") # paths to saved files
+baseline_models_fit_files <- grep("fit_", baseline_models_all_files, value = TRUE) # paths to model fits
+baseline_models_inputdata_files <- grep("inputdata_", baseline_models_all_files, value = TRUE) # paths to input data files
+
+# initialize list-vectors for saving model inputs and model outputs
 sensitivity_model_fits <- vector("list",length(sensitivity_models_fit_files))
 baseline_model_fits <- vector("list", length(baseline_models_fit_files))
 
+# loop over all model fits to data subsets
 for(i in c(1:length(sensitivity_models_fit_files))) {
-  fit <- readRDS(sensitivity_models_fit_files[i])
-  input <- readRDS(sensitivity_models_inputdata_files[i])
-  fit_summary <- restruct_STAN_fit(fit, input)
-  Lokal <- sub(".*fit_([^_]+)_.*", "\\1", sensitivity_models_fit_files[i])
-  Depth_stratum <- sub(".*_([^_]+)\\.RDS$", "\\1", sensitivity_models_fit_files[i])
+  fit <- readRDS(sensitivity_models_fit_files[i]) # MCMC data
+  input <- readRDS(sensitivity_models_inputdata_files[i]) # input data
+  fit_summary <- restruct_STAN_fit(fit, input) # summarize MCMC fit
+  Lokal <- sub(".*fit_([^_]+)_.*", "\\1", sensitivity_models_fit_files[i]) # Extract name of fitted area
+  Depth_stratum <- sub(".*_([^_]+)\\.RDS$", "\\1", sensitivity_models_fit_files[i]) # Extract depth strata from file name
   
-  
+  # save a list with scenarios indices(Area and depth strata), model fit and input data. 
   sensitivity_model_fits[[i]] <- list(Area=Lokal, 
-                              Depth_stratum=Depth_stratum, 
-                              fit = fit_summary, 
-                              input = input)
-}
+                                      Depth_stratum=Depth_stratum, 
+                                      fit = fit_summary, 
+                                      input = input)
+} # end of for-loop
 
-  for(i in c(1:length(baseline_models_fit_files))){
-  fit <- readRDS(baseline_models_fit_files[i])
-  input <- readRDS(baseline_models_inputdata_files[i])
-  fit_summary <- restruct_STAN_fit(fit, input)
-  Lokal <- sub("fit_(.*)\\d{4}-\\d{2}-\\d{2}.*", "\\1", basename(baseline_models_fit_files[i]))
+# loop over all baseline models
+for(i in c(1:length(baseline_models_fit_files))){
+  fit <- readRDS(baseline_models_fit_files[i]) # Load MCMC model fit data
+  input <- readRDS(baseline_models_inputdata_files[i]) # Load input data
+  fit_summary <- restruct_STAN_fit(fit, input) # Summarize MCMC data
+  Lokal <- sub("fit_(.*)\\d{4}-\\d{2}-\\d{2}.*", "\\1", basename(baseline_models_fit_files[i])) # Extract name of fitted area
+  
+  # save a list with area, model fit and input data.
   baseline_model_fits[[i]] <- list(Area = Lokal,
                                Depth_stratum = "All Depths",
                                fit = fit_summary,
                                input = input) 
-   }
+} # end of for-loop
 
 
 # convert to tibble with first two columns representing scenarios
@@ -548,7 +580,7 @@ sensitivity_model_fits <- map_dfr(sensitivity_model_fits, ~ tibble(
                         Area=="Torhamn, Karlskrona Ö skärgård" ~ "Torhamn",
                         .default = Area))
 
-#
+# convert to tibble with first two columns representing scenarios(in this case Area and depth stratum="All Depths")
 baseline_model_fits <- map_dfr(baseline_model_fits, ~ tibble(
   Area = .x$Area,
   Depth_stratum = .x$Depth_stratum,
@@ -556,47 +588,84 @@ baseline_model_fits <- map_dfr(baseline_model_fits, ~ tibble(
   input = list(.x$input)
 ))
 
+# Merge model summaries for baseline and depth stratified model fits
 all_model_fits <- bind_rows(sensitivity_model_fits, baseline_model_fits)
-
 ```
 
-## 4.4 Plot figures
-```{r}
+# 5. Figures
 
-```
+## 5.1 Extract data needed for creating figures
 
 ```{r}
-# extract the data needed
+##################################
+# extract data needed  for plots #
+##################################
+
+# 1. Mean mortality per age-class
 Plot_data_Z_hat <- all_model_fits %>% #all_model_fits %>%
   mutate(selected = map(fit, "Z_hat")) %>%  # extract sublist
   unnest(selected) %>%
   filter(age_class!="plusgroup")
 
+# 2. Time varying mortality per age-class
 Plot_data_Z <- all_model_fits %>%
   mutate(selected = map(fit, "Z")) %>%  # extract sublist
   unnest(selected) %>%
   filter(age_class!="plusgroup")
 
+# 3. Abundance weighted mortality
 Plot_data_Z_mean <- all_model_fits %>%
   mutate(selected = map(fit, "Z_mean")) %>%  # extract sublist
   unnest(selected) 
 
-  # set wong-colour palette
-  pal <- set_wong_colours()
-  
+# set wong-colour palette
+pal <- set_wong_colours()
+
+```
+
+## 5.2 Plot figures
+
+### 5.2.1 Mean age-class mortality
+
+Mean age-class mortality was calculated as a mean mortality for the full time series, for each age-class individually:
+
+$$
+\bar{Z}_a = \frac{\sum_{t=1}^{T} \hat{Z}_{a,t}}{T}
+$$
+
+where $\hat{Z}_{a,t}}$ is the mortality rate for age-class a at time *t* and *T* is the time series length.
+
+```{r}
+#| label: fig-mean-age-class-mortality   
+#| fig-cap: "Mean age-class mortality. This figure shows how model estimate of mean age-class mortality changes depending on data subsetting. Each bar represents mean age-class mortality estimates based on gillnet data from the depth stratum 0,1-3 m, 3-6 m, 6-10 m and all depths are here shown in yellow, light blue green and dark blue, respectively. Trendlines based on mean age-class mortality as a function of age-class are displayed in the same colours as bars."
+
 # create figure  
-  mean_age_class_mortality <-
   ggplot(Plot_data_Z_hat, aes(x = age_class, y = median, fill = Depth_stratum, group=Depth_stratum,colour=Depth_stratum)) +
   geom_col(position=position_dodge(width=0.8), width=0.7) +
   geom_smooth(method="lm", se=FALSE) +  
-    #  geom_bar(stat="identity", fill=Depth_stratum, position = "dodge") +
-  #geom_pointrange(aes(x = age_class, y = median, ymin = q5, ymax = q95), colour = "black") +
-    scale_fill_manual(values = pal) +
-    scale_colour_manual(values = pal) +
+    labs(x = "Age class",
+         y = expression(bar(italic(Z))[a] ~ "(" * "Mean age-class mortality" * ")")) +
+    scale_fill_manual(name = "Depth stratum",
+                      values = pal) +
+    scale_colour_manual(name = "Depth stratum",
+                        values = pal) +
     facet_wrap(~Area, scales="free_y") +
     theme_bw()
 
-  
+```
+
+### 5.2.2 Timevarying age-class mortality
+
+Time varying age-class-specific mortality rates were simply derived from model estimates:
+
+$$
+\hat{Z}_{a,t}}
+$$
+
+```{r}
+#| label: fig-age-class-mortality 
+#| fig-cap: "Age-class specific mortality rates. This figure shows how model estimate of time varying age-class specific mortality rates change depending on data subsetting. Mortality estimates based on gillnet data from the depth stratum 0,1-3 m, 3-6 m, 6-10 m and all depths are here shown in yellow, light blue green and dark blue, respectively."
+
 # Creat a list of areas  
 Areas <- unique(all_model_fits$Area)
 
@@ -620,99 +689,41 @@ for (i in 1:length(Areas)) {
   print(age_class_mortality_per_depth(Plot_data_Z, Areas[i]))
 }
 
+```
+
+### 5.2.3 Abundance weighted mortality
+
+Annual mortality rates were derived using abundance weighted age-class specific mortality rates, following:
+
+$$
+\bar{Z}_t = \frac{\sum_{i} \hat{Z}_{i,t} \cdot N_{i,t}}{\sum_{i} N_{i,t}}
+$$
+
+Annual age-class mortality is the posterior draws of the annual age-class mortality ($\hat{Z}[a,t]$) defined above.
+
+```{r}
+#| label: fig-abundance-weighted-mortality 
+#| fig-cap: "Abundance weighted mortality. This figure shows how model estimates of abundance weighted mean mortality change depending on data subsetting. Mortality estimates based on gillnet data from the depth stratum 0,1-3 m, 3-6 m, 6-10 m and all depths are here shown in yellow, light blue green and dark blue, respectively."
+
   ggplot(Plot_data_Z_mean, aes(x = year, y = median, color=Depth_stratum)) +
   geom_line() +
   geom_point() +
   labs(
     x = "Year",
-    y = expression(paste("Z"['a, t']," (mean mortality)"))
+         y = expression(bar(italic(Z))[t] ~ "(" * "Abundance weighted mortality" * ")")
   ) +
   scale_color_manual(values = pal) +
   facet_wrap(vars(Area),scales="free_y") +
   theme_bw()  
 
-}
 ```
 
+# 6. Conclusion
 
-## 4.1 Råneå
+-   The increasing mortality with age as found across all studied sites is robust against data subsetting. In other words, mortality increase with age if data from shallow stations, intermediate depth stations as well as deep stations are used when fitting models (@fig-mean-age-class-mortality). The pattern is, however, a bit less pronounced when data from shallow stations are use in the analysis. Nothwithstanding, the observation of an increasing mortality with age is still apparent also for the shallow station case.
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Råneå for a detailed description of the data collection  
+-   In general, the temporal dynamics in age-class mortality (see @fig-age-class-mortality) is similar, with peaks and valleys in age-class specific mortality often co-occuring across data subsets. However, it should be noted that some discrepancies from this general pattern are apparent (see @fig-age-class-mortality).
 
+-   The general mortality experienced by perch tend to be relatively robust to data sub setting, and mean mortality estimates tend to co-vary across the data subsets (@fig-abundance-weighted-mortality).
 
-### 5.1.2 Fit model
-
-```{r}
-#| eval: false
-
-# compile model
-model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
-
-# fit model
-fit <- model$sample(
-  data = STAN_input,
-  iter_warmup = 1000, 
-  iter_sampling = 1000,
-  init = generate_inits_list(STAN_input,chains=4),
-  adapt_delta=0.95,
-  seed = 125,
-  chains = 4,
-  parallel_chains = 4,
-  refresh = 100
-)
-
-# save MCMC data
-fit$save_object(paste0("../MCMCOutput/fit_Råneå", Sys.Date(),".RDS"))
-```
-
-```{r}
-##################
-# Load MCMC data #
-##################
-file_path <- list.files(path="../MCMCOutput",
-                    pattern = "^fit_Råneå",
-                    full.names = TRUE)
-
-fit <- readRDS(file_path)
-```
-
-
-
-### 5.1.5 Stock indicators
-
-```{r}
-
-# Make the fitted stan object suitable for plotting
-fit_summary <- restruct_STAN_fit(fit, STAN_input)
-
-# Time series plot for different age-classes
-visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
-
-# Plot expected CPUE per age-class
-visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
-
-#  plot stock indicators(abundance, abundance weighted mortality, and recruitment)
-plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
-
-# plot annual age-class mortality
-visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
-
-# Make table with mortality estimates
-make_mortality_table(fit_summary,plottitle = plottitle)
-
-# Mean age-class mortality
-visualize_mean_age_class_mortality(fit_summary, plottitle)
-
-# Make table with mean age-class mortalities
-ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
-print(ft) # render in qmd
-assign(paste0("Z_",plottitle), ft$body$dataset) # store mean age-class mortalities for later plotting
-
-# Save mortality estimate 
-Z_Råneå <- extract_mortality_estimates(fit_summary, plottitle)
-
-# Save recruitment estimate
-R_Råneå <- extract_recruitment_estimates(fit_summary, plottitle)
-
-```
-
+-   Overall, this analysis suggests that observed pattern of an increasing mortality with age is not an effect of perch utilizing different depth strata within areas. However, it might very well be so that perch utilize different bays during ontogeny, and that some fish disperse.

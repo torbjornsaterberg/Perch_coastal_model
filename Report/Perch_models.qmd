@@ -1646,7 +1646,7 @@ In this section data is formatted for fitting the age-based model. Every area is
 
 ## 5.1 Råneå
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Råneå for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Råneå for a detailed description of the data collection
 
 ### 5.1.1 Format data
 
@@ -1813,7 +1813,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.2 Kinnbäcksfjärden
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Kinnbäcksfjärden" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Kinnbäcksfjärden" for a detailed description of the data collection
 
 ### 5.2.1 Format data
 
@@ -1862,7 +1862,6 @@ fit$save_object(paste0("../MCMCOutput/fit_Kinnbäcksfjärden", Sys.Date(),".RDS"
 saveRDS(STAN_input, 
         "../MCMCOutput/inputdata_Kinnbäcksfjärden.RDS")
 ```
-
 
 ```{r}
 ##################
@@ -1981,7 +1980,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.3 Holmön
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Holmön" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Holmön" for a detailed description of the data collection
 
 ### 5.3.1 Format data
 
@@ -2150,7 +2149,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.4 Norrbyn
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Norrbyn" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Norrbyn" for a detailed description of the data collection
 
 ### 5.4.1 Format data
 
@@ -2320,7 +2319,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.5 Gaviksfjärden
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Gaviksfjärden" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Gaviksfjärden" for a detailed description of the data collection
 
 ### 5.5.1 Format data
 
@@ -2486,7 +2485,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.6 Långvindsfjärden
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Långvindsfjärden" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Långvindsfjärden" for a detailed description of the data collection
 
 ### 5.6.1 Format data
 
@@ -2655,7 +2654,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.7 Forsmark
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Forsmark" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Forsmark" for a detailed description of the data collection
 
 ### 5.7.1 Format data
 
@@ -2719,7 +2718,6 @@ file_path <- list.files(path="../MCMCOutput",
 
 fit <- readRDS(file_path)
 ```
-
 
 ### 5.7.3 Model diagnostics
 
@@ -2829,7 +2827,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.8 Finbo(Åland)
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Finbo, Åland" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Finbo, Åland" for a detailed description of the data collection
 
 ### 5.8.1 Format data
 
@@ -2893,7 +2891,6 @@ file_path <- list.files(path="../MCMCOutput",
 
 fit <- readRDS(file_path)
 ```
-
 
 ### 5.8.3 Model diagnostics
 
@@ -2994,7 +2991,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.9 Kumlinge(Åland)
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Kumlinge, Åland" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Kumlinge, Åland" for a detailed description of the data collection
 
 ### 5.9.1 Format data
 
@@ -3158,7 +3155,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.10 Lagnö
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Lagnö" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Lagnö" for a detailed description of the data collection
 
 ### 5.10.1 Format data
 
@@ -3327,7 +3324,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.11 Askrikefjärden (Vaxholm)
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Vaxholm (Askrikefjärden)" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Vaxholm (Askrikefjärden)" for a detailed description of the data collection
 
 ### 5.11.1 Format data
 
@@ -3389,6 +3386,7 @@ fit <- readRDS(file_path)
 ```
 
 ### 5.11.3 Model diagnostics
+
 ```{r}
 #| eval: false
 
@@ -3398,8 +3396,6 @@ print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to init
 print(fit$cmdstan_diagnose()) # Model fit is ok!!
 
 ```
-
-
 
 ### 5.11.4 Model fit
 
@@ -3495,7 +3491,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.12 Asköfjärden
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Asköfjärden" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Asköfjärden" for a detailed description of the data collection
 
 ### 5.12.1 Format data
 
@@ -3556,7 +3552,6 @@ file_path <- list.files(path="../MCMCOutput",
 
 fit <- readRDS(file_path)
 ```
-
 
 ### 5.12.3 Model diagnostics
 
@@ -3663,7 +3658,7 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.13 Kvädöfjärden
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Kvädöfjärden" for a detailed description of the data collection  
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Kvädöfjärden" for a detailed description of the data collection\
 Note tha K053 (Nätlänkar) instead of K064 (nordiska nät) have been used to collect age-data here!
 
 ### 5.13.1 Format data
@@ -3725,7 +3720,6 @@ file_path <- list.files(path="../MCMCOutput",
 
 fit <- readRDS(file_path)
 ```
-
 
 ### 5.13.3 Model diagnostics
 
@@ -3832,8 +3826,8 @@ calculate_prediction_accuracy(data_long,retr_data)
 
 ## 5.14 Torhamn
 
-See handboksblad at "//storage-og.slu.se/restricted$/Provfiske/Handboksblad/Torhamn" for a detailed description of the data collection  
-### 5.14.1 Format data
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Torhamn" for a detailed description of the data collection\
+\### 5.14.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
@@ -4001,35 +3995,65 @@ calculate_prediction_accuracy(data_long,retr_data)
 ## 5.15 Plot mortality all areas
 
 <!-- ```{r} -->
+
 <!-- # colours for plotting -->
+
 <!-- # wong_colors <- c( -->
+
 <!-- #   "#000000", "#E69F00", "#56B4E9", "#009E73", -->
+
 <!-- #   "#F0E442", "#0072B2", "#D55E00", "#CC79A7", -->
+
 <!-- #   "#999999", "#E69F00", "#56B4E9", "#009E73" -->
+
 <!-- # )                -->
+
 <!-- #  -->
+
 <!-- #  -->
+
 <!-- #  -->
+
 <!-- # # number of areas -->
+
 <!-- # n_areas <- length(unique(Z_all_areas$Area)) -->
+
 <!-- #  -->
+
 <!-- # #make plot -->
+
 <!-- # plot_Z_all_areas <- ggplot(Z_all_areas,aes(y=median,ymin=q5,ymax=q95,x=Area_short,color=Area_short)) + -->
+
 <!-- #   geom_pointrange() + -->
+
 <!-- #   theme_bw()+ -->
+
 <!-- #   scale_colour_manual(values = wong_colors[1:n_areas]) + -->
+
 <!-- #   ylab(expression(bar(Z)[a])) + -->
+
 <!-- #   xlab("") + # remove x-label -->
+
 <!-- #   theme(legend.position = "none") +  # This line removes the legen -->
+
 <!-- #   facet_wrap(~age_class) -->
+
 <!-- #  -->
+
 <!-- # # save figure -->
+
 <!-- # ggsave(paste0("Perch_figures/plot_Z_all_areas.png"), -->
+
 <!-- #            plot=plot_Z_all_areas, -->
+
 <!-- #            device="png", -->
+
 <!-- #            width=14, -->
+
 <!-- #            height=2*14*9/16, -->
+
 <!-- #            units="cm", -->
+
 <!-- #            dpi=300) -->
 
 <!-- ``` -->
@@ -4105,7 +4129,6 @@ write_csv(Z_all_areas, "Perch_figures/Z_all_areas.csv")
 # save table with recruitment index for all areas
 write_csv(R_all_areas, "Perch_figures/R_all_areas.csv") 
 ```
-
 
 # 6 Concluding remarks
 

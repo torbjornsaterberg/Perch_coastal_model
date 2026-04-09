@@ -11,32 +11,36 @@ error: FALSE
 warning: FALSE
 message: FALSE
 toc: true
-toc-depth: 3
+toc-depth: 4
 lang: en  
 ---
 
 # 1. Introduction
 
-This script is used for testing the reliability of an age-based perch model developed by Säterberg & Olsson ([2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)) using computer simulations. With this regards two general analyses are conducted:
+This script is used for testing the reliability of an age-based perch model developed by Säterberg & Olsson ([2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)) using computer simulations. 
 
--   First, we estimate bias in age-specific mortality rate estimates using computer [simulations](#computer_simulations). We are specifically interested in a potential bias in time and age-specific mortality rates, and a potential bias in mean mortality rate per age-class.
+We estimate bias in age-specific mortality rate estimates using computer [simulations](#computer_simulations) and are specifically interested in a potential bias in time and age-specific mortality rates, and a potential bias in mean mortality rate per age-class.
 
-The analyses conducted here are done as we want to assess to what extent the model produces biased estimates. Importantly, as the general result from implementing the age-based model on coastal data suggests that mortality increases with perch age ([Säterberg & Olsson 2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)), we want to address whether this could be due to a model artifact. For example, will a decreasing morality with age be recovered by the model or does the model always suggest an increasing mortality with age independent of the structure of the simulation.
+The analyses are done as we want to assess to what extent the model produces biased estimates. Importantly, as the general result from implementing the age-based model on coastal data suggests that mortality increases with perch age ([Säterberg & Olsson 2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)), we want to address whether this could be due to a model artifact. For example, will a decreasing morality with age be recovered by the model or does the model always suggest an increasing mortality with age independent of the structure of the simulation.
 
-
+# 1.1 R-packages
 ```{r}
 library(MASS)  # Stats functions
 library(tidyverse) # tidy functions
 library(cmdstanr) 
 ```
 
+# 1.2 Source utility functions and Simulation files
 ```{r}
 
-# List all .R files in the directory
+# List all .R simulation files in the directory
 files.sources <- list.files(path = "../R-simulations", pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(files.sources, source)) # source
 
-# Source each file
-sapply(files.sources, source)
+# List utility functions
+files <- list.files("../R", pattern = "\\.R$", full.names = TRUE)
+invisible(sapply(files, source)) # source
+ 
 ```
 
 # 2. Simulation based bias estimation {#computer_simulations}
@@ -241,35 +245,6 @@ The simulation model was implemented in R and consisted of the following steps:
 
 : Simulation scenarios {#tbl-sim}
 
-### 2.1.7 Parameter values
-
-| Scenario | $\mu_R$ | $\sigma_R$ | Deterministic Z-signal | $\mu_a$ | $\kappa$ | $\phi$ | $CV_{Z_a}$ |
-|---------|---------|---------|---------|---------|---------|---------|---------|
-| S1 |  | Stationary | sinus | 0.5 |  |  |  |
-| S2 | 4 | Stationary | Same for all age-classes | 0.5 |  |  |  |
-| S3 | 4 | Stationary | Decrease with age | 0.5 |  |  |  |
-| S4 | 4 | Stationary | Increase with age | 1 |  |  |  |
-| S5 | 4 | Stationary | Same for all age-classes | 1 |  |  |  |
-| S6 | 4 | Stationary | Decrease with age | 1 |  |  |  |
-| S7 | 7 | Stationary | Increase with age | 0.5 |  |  |  |
-| S8 | 7 | Stationary | Same for all age-classes | 0.5 |  |  |  |
-| S9 | 7 | Stationary | Decrease with age | 0.5 |  |  |  |
-| S10 | 7 | Stationary | Increase with age | 1 |  |  |  |
-| S11 | 7 | Stationary | Same for all age-classes | 1 |  |  |  |
-| S12 | 7 | Stationary | Decrease with age | 1 |  |  |  |
-| S13 | 4 | Increasing | Increase with age | 0.5 |  |  |  |
-| S14 | 4 | Increasing | Same for all age-classes | 0.5 |  |  |  |
-| S15 | 4 | Increasing | Decrease with age | 0.5 |  |  |  |
-| S16 | 4 | Increasing | Increase with age | 1 |  |  |  |
-| S17 | 4 | Increasing | Same for all age-classes | 1 |  |  |  |
-| S18 | 4 | Increasing | Decrease with age | 1 |  |  |  |
-| S19 | 7 | Increasing | Increase with age | 0.5 |  |  |  |
-| S20 | 7 | Increasing | Same for all age-classes | 0.5 |  |  |  |
-| S21 | 7 | Increasing | Decrease with age | 0.5 |  |  |  |
-| S22 | 7 | Increasing | Increase with age | 1 |  |  |  |
-| S23 | 7 | Increasing | Same for all age-classes | 1 |  |  |  |
-| S24 | 7 | Increasing | Decrease with age | 1 |  |  |  |
-
 # 3. Results
 
 
@@ -343,12 +318,12 @@ fit <- readRDS("../Data/Simulations/fit_example_Scenario1.rds")
 compare_simulated_and_estimated_mortality_rates(fit, sim$Z)
 ```
 
-#### 3.1.1.4 Simualate data for bias assessment (Obs slow!!!)
+#### 3.1.1.4 Simulate data for bias assessment (Obs slow!!!)
 
 ```{r}
 #| eval: false
 
-n_rep <- 100
+n_rep <- 100 # change here for number of replicates
 Z <- tibble()
 
 # loop over all replicates
@@ -416,7 +391,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -614,7 +589,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y =expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -810,7 +785,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -1008,7 +983,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -1206,7 +1181,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -1402,7 +1377,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -1596,7 +1571,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -1790,7 +1765,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -1984,7 +1959,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -2178,7 +2153,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -2372,7 +2347,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -2566,7 +2541,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -2752,7 +2727,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -2946,7 +2921,7 @@ ggplot(Z_time, aes(x=age_class, y=rel_bias)) + geom_violin() + labs(y = expressi
 ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, colour="red") + labs(x = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap(~age_class) + theme_bw()
 
 # Observed vs bias
-ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
 ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
@@ -3145,7 +3120,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -3343,7 +3318,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -3541,7 +3516,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -3737,7 +3712,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -3931,7 +3906,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -4125,7 +4100,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -4319,7 +4294,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -4513,7 +4488,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -4707,7 +4682,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -4901,7 +4876,7 @@ ggplot(Z_time, aes(x=rel_bias)) + geom_histogram() + geom_vline(xintercept = 0, 
 ggplot(Z_time, aes(x = Z_true, y = bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 # Observed vs relative bias
-ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Bias " (hat(theta) - theta))) + facet_wrap( ~ age_class, scales="free") + theme_bw()
+ggplot(Z_time, aes(x = Z_true, y = rel_bias)) + geom_point() + geom_hline(yintercept = 0, colour="red") + labs(x=expression("Observed " (theta)), y = expression("Relative bias " (hat(theta) - theta) / theta)) + facet_wrap( ~ age_class, scales="free") + theme_bw()
 
 ```
 
@@ -4944,4 +4919,23 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
        y="Proportion cases CI includes or not includes true value")
 ```
 
-# 4. Effect of data subsetting on
+# 4. Conclusion
+
+From simple time series plots it is clear that the model can not reproduce drastic fluctuations in mortality. Similar to random walks in general the model smooths fluctuations. It is further important to note that mortality is a latent parameter, that is, a variable that is not directly observed in the data but rather inferred from the model using abundance data. Hence, we are not to expect a "perfect" fit to data. Notwithstanding, the model often gives plausible estimates of simulated mortality rates and mimics temporal patterns. It is clear, both when comparing temporal patterns in observed and estimated age-class specific mortality rates, when comparing estimated and observed values, and when comparing bias to observed values, that the model tends to underestimate high mortality values and overestimate low mortality rates. 
+
+Mean age-class specific mortality rates are well reproduced by the model, something which is clearly visible in plots showing bias in mean age-class specific mortality and the relatively good coverage that credibility intervals of mean age-class mortality have on observed values. Mean age-class specific mortality rates are better reproduced in the case of 7 age-classes as compared to 4 age-classes.
+
+Below follows some specific comments, comparing the different scenarios that were tested:
+
+1. Stationary mortality dynamics vs. trend
+-  It is unclear to what extent the model handles stationary or trends in a better way. From visual inspections of bias it seems that the model is better at reproducing trends. However, most important the model can clearly handle trends in mortality, something which is observed in the model systems.   
+2. Number of age-classes
+- It appears as if bias is lower in the case of 7 vs. 4 age classes. 
+3. Mortality increase, the same or decrease with age
+- It is clear that model can handle all of these cases. If the observed mortality increase with age so does mortality estimates. **HENCE**, the increase in mean mortality with age observed in the example systems is not a model artifact. 
+4. Noise to signal ratio
+- An increasing noise to signal ratio in observed mortality naturally leads to a large bias in parameter estimates. This is expected, the random walk just follows the mean pattern. 
+
+*Overall, this simulation experiment clearly shows that model estimates are plausible!!*
+
+- Stationary vs. deterministic trend
