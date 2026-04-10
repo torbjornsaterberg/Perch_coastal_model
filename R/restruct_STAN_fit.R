@@ -46,6 +46,21 @@ restruct_STAN_fit <- function(fit, STAN_input_list){
   N_tot <- bind_cols(as.data.frame(year), fit$summary("N_tot")) %>%
     relocate(year,.after=variable)
   
+  # rel_N - Relative number of individuals per age-class per year
+  rel_N <- fit$summary("rel_N") %>%
+    mutate(age_class = factor(str_extract(variable, "(?<=\\[)[0-9]+"), 
+                              levels = 1:A,        # Extract row index
+                              labels = age_class), # Assign age_class to row index 
+           year = factor(str_extract(variable, "(?<=,)[0-9]+"), 
+                         levels = 1:Y,  # Extract column index
+                         labels = year)  # Assign years to column index
+    ) %>%
+    mutate(age_class=as.character(age_class), # change from factor to character
+           year=as.integer(as.character(year))) %>% # change from factor to character
+    mutate(year_class=case_when(age_class=="plusgroup" ~ year - plusage, # Assign year class
+                                age_class!="plusgroup" ~ year - as.numeric(age_class))) %>% 
+    relocate(year,year_class,age_class,.after=variable) # rearrange order of columns
+  
   # Recruitment indicies
   R <- bind_cols(as.data.frame(year), fit$summary("R")) %>%
     relocate(year,.after=variable) %>%
@@ -97,6 +112,7 @@ restruct_STAN_fit <- function(fit, STAN_input_list){
   STAN_output <- list(N=N, # Expected number of individuals observed per age-class
                       N_obs=N_obs, # Estimate of number of individuals observed per net-night
                       N_tot = N_tot, # Estimated stock size (deterministic prediction)
+                      rel_N = rel_N, # Relative number of individuals per age-class and year
                       R=R, # Estimated recruitment for 0-year olds (Note!!! 0+ individuals in august)
                       Z=Z, # Mortality per age-class
                       Z_hat=Z_hat, # Mean mortality per age-class
