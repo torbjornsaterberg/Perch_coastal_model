@@ -278,7 +278,7 @@ Störning='NEJ'
 AND 
 Godkänd ='JA'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotlands m kustvatten
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -305,7 +305,7 @@ Godkänd='JA'
 AND 
 Störning='NEJ'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotlands m kustvatten
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -339,7 +339,7 @@ Godkänd='JA'
 AND 
 Störning='NEJ'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotlands m kustvatten
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -370,7 +370,7 @@ Here we load information on proportion of males and females in subsamples of the
 SELECT Lokal, Fiskeår, Längdgrupp, ANTAL_HANAR, ANTAL_HONOR, ANTAL
 FROM AquaDW_prod.mart.KUL_STICKPROVSUTFALL ks
 WHERE
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotlands m kustvatten
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti');
 ```
@@ -3951,10 +3951,187 @@ calculate_prediction_accuracy(data_long,retr_data)
 -   Mortality appears to decrease over time for one-year-olds, whereas no clear time patterns are observed for other age-classes.
 -   Overall the dynamics appears to be relatively stable, suggesting a relatively healthy stock
 
-## 5.14 Torhamn
 
-See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Torhamn" for a detailed description of the data collection\
-\### 5.14.1 Format data
+## 5.14 Östra Gotlands m kustvatten
+
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Råneå for a detailed description of the data collection
+
+### 5.14.1 Format data
+
+```{r}
+# Rearrange data from one area into columns showing age classes and a plusgroup
+data_wide <- summarize_plusgroup(min_age = 1,
+                    plus_age = 2,
+                    area = "Östra Gotlands m kustvatten",
+                    data = join_age_per_obsid_effort)
+
+# Rearrange into long format for plotting etc.
+data_long <- create_long_format(data_wide)
+
+# Create a list for fitting Bayesian model
+STAN_input <- create_STAN_input_list(data_wide)
+
+# Add title for plots for this area
+plottitle = "Östra Gotlands m kustvatten"
+```
+
+### 5.14.2 Fit model
+
+```{r}
+#| eval: false
+
+# compile model
+model <- cmdstan_model('../STAN/age_model_logN_Z_rw_STAN.stan')
+
+# fit model
+fit <- model$sample(
+  data = STAN_input,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  init = generate_inits_list(STAN_input,chains=4),
+  adapt_delta=0.95,
+  seed = 125,
+  chains = 4,
+  parallel_chains = 4,
+  refresh = 100
+)
+
+# save MCMC data
+fit$save_object(paste0("../MCMCOutput/fit_Östra_Gotlands_m_kustvatten.RDS"))
+
+# save input data
+saveRDS(STAN_input,
+        "../MCMCOutput/inputdata_Östra_Gotlands_m_kustvatten.RDS")
+
+```
+
+```{r}
+##################
+# Load MCMC data #
+##################
+file_path <- list.files(path="../MCMCOutput",
+                    pattern = "^fit_Östra_Gotlands",
+                    full.names = TRUE)
+
+fit <- readRDS(file_path)
+```
+
+### 5.14.3 Model diagnostics
+
+```{r}
+#| eval: FALSE
+
+print(paste0(sum(fit$return_codes()), " out of 4 chains were not run due to initialization problems"))
+
+# check for potential sampling issues
+print(fit$cmdstan_diagnose()) # Model fit is ok!!
+
+```
+
+### 5.14.4 Model fit
+
+```{r}
+
+# Plot posterior predictive checks(densities per age-group and number of zeros per age-group)
+create_PPC_plots(STAN_input, fit, 100, plottitle)
+
+# calculate bayesian R2-value
+R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input$y))) # need a matrix with each obs simulated in columns and and vector with observations as second argument.
+
+```
+
+`r paste("Bayesian R2 =", round(R2, digits = 2))`
+
+#### 5.14.4.1 Comment on model fit
+
+Fit seems to be ok. The model has converged(only 1 divergent transition out of 4000 iteration). Further, posterior predictive checks indicate that the model is predicting in-sample data reasonably, except for the age-class 4 where the model tend to overestimate the number of zeros in the data.
+
+### 5.14.5 Stock indicators
+
+```{r}
+
+# Make the fitted stan object suitable for plotting
+fit_summary <- restruct_STAN_fit(fit, STAN_input)
+
+# Time series plot for different age-classes
+visualize_pred_and_obs_per_age_class(fit_summary, data_long, plottitle = plottitle)
+
+# Plot expected CPUE per age-class
+visualize_expected_CPUE_per_age_class(fit_summary, data_long, plottitle=plottitle)
+
+# Plot relative age-class abundance over time
+visualize_relative_age_class_abundance(fit_summary, plottitle)
+
+#  plot stock indicators(abundance, abundance weighted mortality, and recruitment)
+plot_stock_indicators(fit_summary, data_long, plottitle = plottitle)
+
+# plot annual age-class mortality
+visualize_age_class_annual_mortality(fit_summary, plottitle = plottitle)
+
+# Make table with mortality estimates
+make_mortality_table(fit_summary,plottitle = plottitle)
+
+# Mean age-class mortality
+visualize_mean_age_class_mortality(fit_summary, plottitle)
+
+# Save relative age-class abundance
+rel_N_Östra_Gotlands_m_kustvatten <- extract_relative_age_class_abundance(fit_summary, plottitle)
+
+# Make table with mean age-class mortalities
+ft <- make_mean_age_class_mortality_table(fit_summary,plottitle)
+print(ft) # render in qmd
+assign("Z_hat_Östra_Gotlands_m_kustvatten", ft$body$dataset) # store mean age-class mortalities for later plotting
+
+# Save annual mortality estimates
+Z_mean_Östra_Gotlands_m_kustvatten <- extract_annual_mortality_estimates(fit_summary, plottitle)
+
+# Save age-class specific annyal mortality estimate
+Z_Östra_Gotlands_m_kustvatten <- extract_mortality_estimates(fit_summary, plottitle)
+
+# Save recruitment estimate
+R_Östra_Gotlands_m_kustvatten <- extract_recruitment_estimates(fit_summary, plottitle)
+
+```
+
+### 5.14.6 Retrospective analysis and prediction accuracy
+
+```{r}
+#| eval: false
+# conduct retrospective analysis
+retr_data <- do_retrospective_analysis(model, data_wide, n_peels=5)
+```
+
+```{r}
+#| eval: false
+#| warnings: false
+# Plot peels Z
+plot_peels_Z(retr_data,plottitle)
+
+# Mohns rho Z
+calculate_Mohns_rho_Z(retr_data,n_peels=5)
+
+# Plot peels N
+plot_peels_N(retr_data,plottitle)
+
+# Mohns rho N
+calculate_Mohns_rho_N(retr_data,n_peels=5)
+
+# 1-step-ahead forecast accuracy in N
+calculate_prediction_accuracy(data_long,retr_data)
+```
+
+### 5.14.7 Conclusions
+
+-   Time series showing number of individuals caught per age-class and year indicate that model gives a relatively good fit to data, with no clear observations of biased estimates.
+-   Mortality is high in this area, with no clear observations of any time trend.
+-   The recruitment index indicates that the warm summer 2018 was associated with good recruitment.
+
+
+## 5.15 Torhamn
+
+See handboksblad at "//storage-og.slu.se/restricted\$/Provfiske/Handboksblad/Torhamn" for a detailed description of the data collection.
+
+### 5.15.1 Format data
 
 ```{r}
 # Rearrange data from one area into columns showing age classes and a plusgroup
@@ -3973,7 +4150,7 @@ STAN_input <- create_STAN_input_list(data_wide)
 plottitle = "Torhamn"
 ```
 
-### 5.14.2 Fit model
+### 5.15.2 Fit model
 
 ```{r}
 #| include: false
@@ -4014,7 +4191,7 @@ file_path <- list.files(path="../MCMCOutput",
 fit <- readRDS(file_path)
 ```
 
-### 5.14.3 Model diagnostics
+### 5.15.3 Model diagnostics
 
 ```{r}
 
@@ -4027,7 +4204,7 @@ print(fit$cmdstan_diagnose())
 }
 ```
 
-### 5.14.4 Model fit
+### 5.15.4 Model fit
 
 ```{r}
 
@@ -4041,11 +4218,11 @@ R2 <- median(bayes_R2(posterior::as_draws_matrix(fit$draws("yrep")),c(STAN_input
 
 `r paste("Bayesian R2 =", round(R2, digits = 2))`
 
-#### 5.14.4.1 Comment on model fit
+#### 5.15.4.1 Comment on model fit
 
 Fit seems to be ok. The model has converged and there are no apparent issues with divergent transitions. Further, posterior predictive checks indicate that the model is doing a good job for in-sample data (i.e. model simulations of the distribution of data points is similar to the observed distribution). Note, however, that the model tends to underestimate the number times zero one-year-olds are caught in the nets. Nevertheless, this can be seen as minor issue given the overall nice fit and that there are no convergence issues. Hence, we move on and plot some nice figures.
 
-### 5.14.5 Stock indicators
+### 5.15.5 Stock indicators
 
 ```{r}
 
@@ -4091,7 +4268,7 @@ Z_Torhamn <- extract_mortality_estimates(fit_summary, plottitle)
 R_Torhamn <- extract_recruitment_estimates(fit_summary, plottitle)
 ```
 
-### 5.14.6 Retrospective analysis and prediction accuracy
+### 5.15.6 Retrospective analysis and prediction accuracy
 
 ```{r}
 #| include: false
@@ -4121,14 +4298,14 @@ calculate_Mohns_rho_N(retr_data,n_peels=5)
 calculate_prediction_accuracy(data_long,retr_data)
 ```
 
-### 5.14.7 Conclusions
+### 5.15.7 Conclusions
 
 -   The model fit seems to be relatively good.
 -   Mortality rate has increased in Torhamn during the last couple of years(from appr. 2018 and onwards), which is reflected by the very low number of individuals at age 3 and above during the last couple of years.
 -   According to the model, in general mortality is higher for old as compared to young individuals in the stock.
 -   The recruitment index has had a few peeks during the last years, for which the year-class of the very varm summer 2018 stands out. During 2018 it appears as if it was a peek in recruitment, and a strong year-class was born.
 
-## 5.15 Save mortality and recruitment estimates for all areas
+## 5.16 Save mortality and recruitment estimates for all areas
 
 ```{r}
 
@@ -4160,6 +4337,7 @@ rel_N_all_areas <- bind_rows(rel_N_Råneå,
                          rel_N_Askrikefjärden,
                          rel_N_Asköfjärden,
                          rel_N_Kvädöfjärden,
+                         rel_N_Östra_Gotlands_m_kustvatten,
                          rel_N_Torhamn) %>%
                 right_join(GIS_coord, by = join_by(Area)) # append GIS coordinates to mortality estimates
 
@@ -4177,6 +4355,7 @@ Z_all_areas <- bind_rows(Z_Råneå,
                          Z_Askrikefjärden,
                          Z_Asköfjärden,
                          Z_Kvädöfjärden,
+                         Z_Östra_Gotlands_m_kustvatten,
                          Z_Torhamn) %>%
                 right_join(GIS_coord, by = join_by(Area)) # append GIS coordinates to mortality estimates
 
@@ -4194,6 +4373,7 @@ Z_mean_all_areas <- bind_rows(Z_mean_Råneå,
                          Z_mean_Askrikefjärden,
                          Z_mean_Asköfjärden,
                          Z_mean_Kvädöfjärden,
+                         Z_mean_Östra_Gotlands_m_kustvatten,
                          Z_mean_Torhamn) %>%
                 right_join(GIS_coord, by = join_by(Area)) # append GIS coordinates to mortality estimates
 
@@ -4211,6 +4391,7 @@ Z_hat_all_areas <- bind_rows(Z_hat_Råneå,
                          Z_hat_Askrikefjärden,
                          Z_hat_Asköfjärden,
                          Z_hat_Kvädöfjärden,
+                         Z_hat_Östra_Gotlands_m_kustvatten,
                          Z_hat_Torhamn) %>%
                 right_join(GIS_coord, by = join_by(Area)) # append GIS coordinates to mortality estimates
 
@@ -4228,6 +4409,7 @@ R_all_areas <- bind_rows(R_Råneå,
                          R_Askrikefjärden,
                          R_Asköfjärden,
                          R_Kvädöfjärden,
+                         R_Östra_Gotlands_m_kustvatten,
                          R_Torhamn) %>%
                 right_join(GIS_coord, by = join_by(Area)) # append GIS coordinates to recruitment estimates
 

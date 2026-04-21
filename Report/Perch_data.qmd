@@ -110,7 +110,7 @@ Störning='NEJ'
 AND 
 Godkänd ='JA'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotland m kustvatten
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -138,7 +138,7 @@ Godkänd='JA'
 AND 
 Störning='NEJ'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotlands m kustvatten
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -172,7 +172,7 @@ Godkänd='JA'
 AND 
 Störning='NEJ'
 AND 
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotlands m kustvatten
 AND 
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti')
 AND 
@@ -200,8 +200,8 @@ Fiske IN('Nordiska nät augusti', 'Nätlänk augusti'));
 SELECT Lokal, Fiskeår, Längdgrupp, ANTAL_HANAR, ANTAL_HONOR, ANTAL
 FROM AquaDW_prod.mart.KUL_STICKPROVSUTFALL ks
 WHERE
-Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm)
-AND 
+Lokal_ID IN(129, 49, 31, 65, 79, 84, 82, 66, 106, 94, 54, 28, 57, 203, 48) -- Torhamn, Holmön, Forsmark, Långvindsfjärden, Norrbyn, Kinnbäcksfjärden, Gaviksfjärden, Lagnö, Råneå, Asköfjärden, Kvädöfjärden, Finbo(Åland), Kumlinge(Åland), Askrikefjärden(Vaxholm), Östra Gotlands m kustvatten
+AND
 Fiske IN ('Nordiska nät augusti','Kontrollprogram Nordiska nät augusti');
 ```
 

@@ -43,7 +43,10 @@ restruct_STAN_fit <- function(fit, STAN_input_list){
     relocate(year,year_class,age_class,.after=variable) # rearrange order of columns
   
   # N_tot - number of individuals per year
-  N_tot <- bind_cols(as.data.frame(year), fit$summary("N_tot")) %>%
+  N_tot_df <- fit$summary("N_tot")
+  
+  N_tot <- bind_cols(data.frame(year = year[seq_len(nrow(N_tot_df))]), 
+                     N_tot_df) %>%
     relocate(year,.after=variable)
   
   # rel_N - Relative number of individuals per age-class per year
@@ -62,7 +65,12 @@ restruct_STAN_fit <- function(fit, STAN_input_list){
     relocate(year,year_class,age_class,.after=variable) # rearrange order of columns
   
   # Recruitment indicies
-  R <- bind_cols(as.data.frame(year), fit$summary("R")) %>%
+  R_df <- fit$summary("R")
+  
+  R <- bind_cols(
+    data.frame(year = year[seq_len(nrow(R_df))]), 
+    R_df
+    ) %>%
     relocate(year,.after=variable) %>%
     add_column(min_age=N1_age,.after=year)
   
@@ -73,7 +81,7 @@ restruct_STAN_fit <- function(fit, STAN_input_list){
                               labels = age_class), # Assign age_class to row index 
            year = factor(str_extract(variable, "(?<=,)[0-9]+"), 
                          levels = 1:(Y-1),  # Extract column index
-                         labels = year[1:Y-1])  # Assign years to column index
+                         labels = year[1:(Y-1)])  # Assign years to column index
     ) %>%
     mutate(age_class=as.character(age_class), # change from factor to character
            year=as.integer(as.character(year))) %>% 
@@ -82,8 +90,12 @@ restruct_STAN_fit <- function(fit, STAN_input_list){
     relocate(year,age_class,year_class, .after=variable) # rearrange order of columns
   
   # abundance-weighted arithmetic mean mortality
+  Z_mean_df <- fit$summary("Z_mean")
+  
   Z_mean <- 
-    bind_cols(data.frame(year=year[1:Y-1]), fit$summary("Z_mean")) %>%
+    bind_cols(data.frame(year=year[seq_len(nrow(Z_mean_df))]), 
+              Z_mean_df
+              ) %>%
     relocate(year,.after=variable)
   
   # Mean abundance-weighted arithmetic mean mortality across whole time series
