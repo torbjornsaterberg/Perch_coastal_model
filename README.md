@@ -1,5 +1,5 @@
 ## Introduction
-This repository contains code for running the Perch stock assessment model described in Säterberg & Olsson 2025. 
+This repository contains code for running the Perch stock assessment model described in [Säterberg & Olsson 2026](https://publications.slu.se/?file=publ/show&id=145320). 
 
 ## Repositories
 ### Report 
