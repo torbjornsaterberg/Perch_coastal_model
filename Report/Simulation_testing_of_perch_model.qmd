@@ -17,13 +17,14 @@ lang: en
 
 # 1. Introduction
 
-This script is used for testing the reliability of an age-based perch model developed by Säterberg & Olsson ([2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)) using computer simulations. 
+This script is used for testing the reliability of an age-based perch model developed by Säterberg & Olsson ([2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)) using computer simulations.
 
 We estimate bias in age-specific mortality rate estimates using computer [simulations](#computer_simulations) and are specifically interested in a potential bias in time and age-specific mortality rates, and a potential bias in mean mortality rate per age-class.
 
 The analyses are done as we want to assess to what extent the model produces biased estimates. Importantly, as the general result from implementing the age-based model on coastal data suggests that mortality increases with perch age ([Säterberg & Olsson 2026](https://pub.epsilon.slu.se/39154/1/saterberg-t-et-al-20260112.pdf)), we want to address whether this could be due to a model artifact. For example, will a decreasing morality with age be recovered by the model or does the model always suggest an increasing mortality with age independent of the structure of the simulation.
 
 # 1.1 R-packages
+
 ```{r}
 library(MASS)  # Stats functions
 library(tidyverse) # tidy functions
@@ -31,6 +32,7 @@ library(cmdstanr)
 ```
 
 # 1.2 Source utility functions and Simulation files
+
 ```{r}
 
 # List all .R simulation files in the directory
@@ -246,7 +248,6 @@ The simulation model was implemented in R and consisted of the following steps:
 : Simulation scenarios {#tbl-sim}
 
 # 3. Results
-
 
 ## 3.1 Stationary mortality
 
@@ -4919,23 +4920,163 @@ ggplot(Z_mean, aes(x = age_class, fill = coverage)) +
        y="Proportion cases CI includes or not includes true value")
 ```
 
+## 3.3 Summary of scenarios
+
+### 3.3.1 Load and arrange all mortality simulations
+
+```{r}
+# load mortality data
+file_paths <- list.files("../Data/Simulations", pattern="^Scenario", full.names = TRUE) # load all scenarios
+file_paths <- file_paths[order(as.numeric(gsub("\\D", "", file_paths)))] # order file paths based on number inside strings
+
+# load all scenarios
+Z_all_scenarios <- lapply(file_paths,
+                          readRDS)
+names(Z_all_scenarios) <- file_paths
+
+# bind all scenarios in one data frame
+Z_all_scenarios <- bind_rows(Z_all_scenarios, .id="Scenario")
+
+# Append info on all scenarios
+Z_all_scenarios <-
+Z_all_scenarios %>% 
+  mutate(Mortality_time_pattern=ifelse(Scenario %in% c(1:12), "Stationary", "Increasing"),
+         Number_of_age_classes=ifelse(Scenario %in% c(1:6,13:18),4,7),
+         Mortality_age_relationship = case_when(Scenario %in% seq(1, 24, by=3) ~ "Increase",
+                                                Scenario %in% seq(2, 24, by=3) ~ "Same",
+                                                Scenario %in% seq(3, 24, by=3) ~ "Decrease",
+                                                .default=NA
+                                                ),
+         Noise_vs_signal = ifelse(Scenario %in% c(1:3, 7:9, 13:15, 19:21), 0.5, 1)
+         )
+
+```
+
+### 3.3.2 Make summaries
+
+```{r}
+Z_summary <-
+Z_all_scenarios %>% 
+  group_by(Z_type,Mortality_time_pattern, Number_of_age_classes, Mortality_age_relationship, Noise_vs_signal,Replicate) %>% 
+  summarize(rmse=sqrt(mean(bias^2)),        # rmse for each rep multivariate Z ts.
+            me=mean(bias),                  # mean error for each rep multivariate Z ts.
+            re_rmse=sqrt(mean(rel_bias^2)), # rmse of rel bias for each rep mv Z ts.
+            re_me = mean(rel_bias)          # mean rel error for each rep multivariate Z ts
+            ) %>% 
+  ungroup() %>% 
+  group_by(Z_type,Mortality_time_pattern, Number_of_age_classes, Mortality_age_relationship, Noise_vs_signal) %>% 
+  summarize(RMSE=mean(rmse),
+            Bias=mean(me),
+            sd_RMSE=sd(rmse),
+            rel_RMSE = mean(re_rmse),
+            rel_Bias = mean(re_me),
+            sd_re_RMSE = sd(re_me) 
+            ) %>%  # summarize over repl.
+  ungroup() 
+
+
+Z_summary_per_age_class <-
+Z_all_scenarios %>% 
+  group_by(Z_type,Mortality_time_pattern, Number_of_age_classes, Mortality_age_relationship, Noise_vs_signal, age_class, Replicate) %>% 
+  summarize(rmse=sqrt(mean(bias^2)),        # rmse for each rep multivariate Z ts.
+            me=mean(bias),                  # mean error for each rep multivariate Z ts.
+            re_rmse=sqrt(mean(rel_bias^2)), # rmse of rel bias for each rep mv Z ts.
+            re_me = mean(rel_bias)          # mean rel error for each rep multivariate Z ts
+            ) %>% 
+  ungroup() %>% 
+  group_by(Z_type,Mortality_time_pattern, Number_of_age_classes, Mortality_age_relationship, Noise_vs_signal, age_class) %>% 
+  summarize(RMSE=mean(rmse),
+            Bias=mean(me),
+            sd_RMSE=sd(rmse),
+            rel_RMSE = mean(re_rmse),
+            rel_Bias = mean(re_me),
+            sd_re_RMSE = sd(re_me) 
+            ) %>%  # summarize over repl.
+  ungroup() 
+
+```
+
+### 3.3.3 Bias in time-varying mortality
+
+```{r}
+# Relative Bias and precision across scenarios for time_varying mortality
+ggplot(Z_summary %>% filter(Z_type=="time_varying"), aes(x=rel_RMSE,y=sd_re_RMSE,colour= as.factor(Number_of_age_classes), shape= Mortality_age_relationship)) +
+  geom_point() +
+  ylab("Precision(sd(rmse))") +
+  xlab("RMSE") +
+  ggtitle("Relative bias") +
+  facet_wrap(~Noise_vs_signal)
+
+# classification tree relative bias
+fit <- rpart(rel_RMSE ~ Mortality_time_pattern + Number_of_age_classes + Mortality_age_relationship + Noise_vs_signal, data= Z_summary_per_age_class %>% filter(Z_type=="time_varying"))
+rpart.plot(fit, faclen=0)
+
+# classification tree relative precision
+fit <- rpart(sd_re_RMSE ~ Mortality_time_pattern + Number_of_age_classes + Mortality_age_relationship + Noise_vs_signal, data= Z_summary_per_age_class %>% filter(Z_type=="time_varying"))
+rpart.plot(fit, faclen=0)
+
+
+
+
+```
+
+### 3. 3. 4 Bias in mean age-class specific mortality
+
+```{r}
+# Relative Bias and precision across scenarios for time_varying mortality
+ggplot(Z_summary %>% filter(Z_type=="mean_mortality"), aes(x=rel_RMSE,y=sd_re_RMSE,colour= as.factor(Number_of_age_classes), shape= Mortality_age_relationship)) +
+  geom_point() +
+  ylab("Precision(sd(rmse))") +
+  xlab("RMSE") +
+  ggtitle("Relative bias") +
+  facet_wrap(~Noise_vs_signal)
+
+# classification tree relative bias
+fit <- rpart(rel_RMSE ~ Mortality_time_pattern + Number_of_age_classes + Mortality_age_relationship + Noise_vs_signal, data= Z_summary_per_age_class %>% filter(Z_type=="mean_mortality"))
+rpart.plot(fit, faclen=0)
+
+
+pred <- predict(fit)
+obs  <- fit$y
+R2 <- 1 - sum((obs - pred)^2) / sum((obs - mean(obs))^2)
+R2
+
+# classification tree relative precision
+fit <- rpart(sd_re_RMSE ~ Mortality_time_pattern + Number_of_age_classes + Mortality_age_relationship + Noise_vs_signal, data= Z_summary_per_age_class %>% filter(Z_type=="mean_mortality"))
+rpart.plot(fit, faclen=0)
+
+
+pred <- predict(fit)
+obs  <- fit$y
+R2 <- 1 - sum((obs - pred)^2) / sum((obs - mean(obs))^2)
+R2
+
+```
+
 # 4. Conclusion
 
-From simple time series plots it is clear that the model can not reproduce drastic fluctuations in mortality. Similar to random walks in general the model smooths fluctuations. It is further important to note that mortality is a latent parameter, that is, a variable that is not directly observed in the data but rather inferred from the model using abundance data. Hence, we are not to expect a "perfect" fit to data. Notwithstanding, the model often gives plausible estimates of simulated mortality rates and mimics temporal patterns. It is clear, both when comparing temporal patterns in observed and estimated age-class specific mortality rates, when comparing estimated and observed values, and when comparing bias to observed values, that the model tends to underestimate high mortality values and overestimate low mortality rates. 
+From simple time series plots it is clear that the model can not reproduce drastic fluctuations in mortality. Similar to random walks in general the model smooths fluctuations. It is further important to note that mortality is a latent parameter, that is, a variable that is not directly observed in the data but rather inferred from the model using abundance data. Hence, we are not to expect a "perfect" fit to data. Notwithstanding, the model often gives plausible estimates of simulated mortality rates and mimics temporal patterns. It is clear, both when comparing temporal patterns in observed and estimated age-class specific mortality rates, when comparing estimated and observed values, and when comparing bias to observed values, that the model tends to underestimate high mortality values and overestimate low mortality rates.
 
 Mean age-class specific mortality rates are well reproduced by the model, something which is clearly visible in plots showing bias in mean age-class specific mortality and the relatively good coverage that credibility intervals of mean age-class mortality have on observed values. Mean age-class specific mortality rates are better reproduced in the case of 7 age-classes as compared to 4 age-classes.
 
 Below follows some specific comments, comparing the different scenarios that were tested:
 
-1. Stationary mortality dynamics vs. trend
--  It is unclear to what extent the model handles stationary or trends in a better way. From visual inspections of bias it seems that the model is better at reproducing trends. However, most important the model can clearly handle trends in mortality, something which is observed in the model systems.   
-2. Number of age-classes
-- It appears as if bias is lower in the case of 7 vs. 4 age classes. 
-3. Mortality increase, the same or decrease with age
-- It is clear that model can handle all of these cases. If the observed mortality increase with age so does mortality estimates. **HENCE**, the increase in mean mortality with age observed in the example systems is not a model artifact. 
-4. Noise to signal ratio
-- An increasing noise to signal ratio in observed mortality naturally leads to a large bias in parameter estimates. This is expected, the random walk just follows the mean pattern. 
+1.  Stationary mortality dynamics vs. trend
+
+-   It is unclear to what extent the model handles stationary or trends in a better way. From visual inspections of bias it seems that the model is better at reproducing trends. However, most important the model can clearly handle trends in mortality, something which is observed in the model systems.\
+
+2.  Number of age-classes
+
+-   It appears as if bias is lower in the case of 7 vs. 4 age classes.
+
+3.  Mortality increase, the same or decrease with age
+
+-   It is clear that model can handle all of these cases. If the observed mortality increase with age so does mortality estimates. **HENCE**, the increase in mean mortality with age observed in the example systems is not a model artifact.
+
+4.  Noise to signal ratio
+
+-   An increasing noise to signal ratio in observed mortality naturally leads to a large bias in parameter estimates. This is expected, the random walk just follows the mean pattern.
 
 *Overall, this simulation experiment clearly shows that model estimates are plausible!!*
 
-- Stationary vs. deterministic trend
+-   Stationary vs. deterministic trend
